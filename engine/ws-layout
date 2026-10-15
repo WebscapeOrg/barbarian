@@ -1366,7 +1366,11 @@ def forget(token):
         floats = [f for i, f in enumerate(floats) if i not in found]
     else:
         leaves = [n[1] for n in _leaf_nodes(tree)]
-        same_class = [w for w in leaves if w["class"] == stand_in["class"]]
+        # Same identity rule as the matchers and the cull: the placeholder stands in for one
+        # plugin window, and the shared shell class must not let a stale placeholder prune an
+        # unrelated shell window's recording (a Magpie placeholder gone stale, 2026-10-15).
+        same_class = [w for w in leaves if w["class"] == stand_in["class"]
+                      and summons_title(w) == summons_title(stand_in)]
         target = next((w for w in same_class if str(w.get("title", ""))[:60] == stand_in["title"][:60]),
                       same_class[0] if same_class else None)
         if target is not None:
