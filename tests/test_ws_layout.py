@@ -9,6 +9,7 @@ only by the real commands). Nothing here touches the shell, the bar or any live 
 """
 import importlib.util
 from importlib.machinery import SourceFileLoader
+import os
 import pathlib
 import sys
 import unittest
@@ -117,6 +118,66 @@ class WindowIdentity(unittest.TestCase):
             engine.close_extras(4, {"🐦 Magpie": 1})
         self.assertEqual(len(closed), 1)
         self.assertIn("0xph", closed[0])
+
+
+class Forget(unittest.TestCase):
+    """`forget` takes a placeholder's window out of the recording — by identity, never by the
+    shared class alone, so a stale Magpie placeholder cannot prune an unrelated shell window's
+    recording (#1120's seam, 2026-10-15)."""
+
+    @staticmethod
+    def stand_in(title, address="0xph", floating=False):
+        return {"class": "org.quickshell", "title": title, "address": address,
+                "floating": floating, "workspace": {"id": 9}, "placeholder": "ab12cd"}
+
+    @staticmethod
+    def run_forget(stand_in, windows):
+        import json, tempfile
+        record = {"workspace": 9, "name": "Test", "format": 2, "windows": windows, "floating": []}
+        fd, path = tempfile.mkstemp(suffix=".json")
+        with os.fdopen(fd, "w") as f:
+            json.dump(record, f)
+        written, closed = {}, []
+        try:
+            with mock.patch.object(engine, "placeholder_client", return_value=stand_in), \
+                 mock.patch.object(engine, "snap_path", return_value=path), \
+                 mock.patch.object(engine, "write_record",
+                                   side_effect=lambda rec: written.update(rec=rec)), \
+                 mock.patch.object(engine, "close_window",
+                                   side_effect=lambda addr: closed.append(addr)):
+                engine.forget("ab12cd")
+        finally:
+            os.unlink(path)
+        return written, closed
+
+    @staticmethod
+    def window(klass, title):
+        return {"class": klass, "title": title, "launch": None, "after": None,
+                "side": None, "share": None, "at": [0, 0], "size": [800, 600]}
+
+    def test_a_stale_magpie_placeholder_cannot_prune_an_unrelated_recording(self):
+        """The Magpie entry is already gone from the recording; only Holodeck remains, and it
+        shares the shell's class. The placeholder must close without touching Holodeck."""
+        written, closed = self.run_forget(self.stand_in("🐦 Magpie"),
+                                          [self.window("org.quickshell", "Holodeck")])
+        self.assertEqual(closed, ["0xph"])
+        self.assertEqual([w["title"] for w in written["rec"]["windows"]], ["Holodeck"])
+
+    def test_a_placeholder_prunes_the_window_it_stands_in_for(self):
+        stand = self.stand_in("Holodeck")
+        written, closed = self.run_forget(stand,
+                                          [self.window("org.quickshell", "Holodeck")])
+        self.assertEqual(closed, ["0xph"])
+        self.assertEqual(written["rec"]["windows"], [])
+
+    def test_ordinary_apps_keep_the_first_of_class_fallback(self):
+        """A terminal placeholder whose recorded title no longer matches still prunes the
+        first window of its class — the pre-existing behaviour, unchanged."""
+        written, _ = self.run_forget({"class": "foot", "title": "old command", "address": "0xph",
+                                      "floating": False, "workspace": {"id": 9},
+                                      "placeholder": "ab12cd"},
+                                     [self.window("foot", "another command")])
+        self.assertEqual(written["rec"]["windows"], [])
 
 
 if __name__ == "__main__":
