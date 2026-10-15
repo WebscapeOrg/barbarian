@@ -109,7 +109,9 @@ class Install(unittest.TestCase):
         hits = []
         for folder in ("plugin", "engine", "hooks"):
             for path in (ROOT / folder).rglob("*"):
-                if path.is_file() and "tinkerbell.reptile" in path.read_text():
+                if path.is_file() and "__pycache__" in path.parts:
+                    continue
+                if path.is_file() and "tinkerbell.reptile" in path.read_text(errors="ignore"):
                     hits.append(str(path.relative_to(ROOT)))
         self.assertEqual(hits, [])
 

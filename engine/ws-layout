@@ -208,6 +208,18 @@ def launcher_for(klass, ws):
     return launch if launch.startswith(("uwsm", "omarchy-launch")) else f"uwsm-app -- {launch}"
 
 
+def launcher_for_win(win, ws):
+    """How to open a whole window record (class AND title), or None. Quickshell plugin windows
+    are summoned by title prefix — the shared class says only "the shell" — and everything else
+    goes by class as before."""
+    if win.get("class") == PLACEHOLDER_CLASS:
+        title = win.get("title", "")
+        for prefix, cmd in SUMMONS.items():
+            if title.startswith(prefix):
+                return cmd
+    return launcher_for(win.get("class"), ws)
+
+
 @functools.lru_cache(maxsize=None)
 def installed_apps():
     """Every installed launcher, as quick-app lists them: label, launch command, window class."""
@@ -265,6 +277,15 @@ def dispatch(lua):
 # placeholder before the real window it would otherwise be counted against.
 PLACEHOLDER_CLASS = "org.quickshell"
 PLACEHOLDER_TITLE = re.compile(r"^Barbarian · missing (\S+) · ([0-9a-f]{6})(?: · (.*))?$")
+
+# Every Quickshell plugin window shares that same class, org.quickshell, so — exactly as the
+# placeholders above are told apart by title — a plugin window Barbarian can reopen is known by
+# its title prefix and summoned through the shell, never launched as a class (2026-10-15, for
+# Magpie: Dave's Phase 3, via @enterprise). Summon, not toggle: the command must open the
+# window when it is closed and leave it be when it is open.
+SUMMONS = {
+    "🐦 Magpie": "omarchy-shell shell summon magpie '{}'",
+}
 # The panel puts a placeholder up in well under a second; this only stops a panel too old to
 # know about placeholders from holding the restore up.
 PLACEHOLDER_TIMEOUT = 5.0
@@ -530,7 +551,7 @@ def float_record(c, ws, g):
     fractions of the screen below the bar so the same recording fits another screen."""
     x, y = c["at"]
     w, h = c["size"]
-    launch = launcher_for(c["class"], ws)
+    launch = launcher_for_win(c, ws)
     # A floating terminal is read the same way a tiled one is: reopened in its folder when it was
     # at its prompt, offered in its placeholder when it was running something.
     how = terminal_record(c) if kind_of(c["class"]) == "terminal" and not launch else {}
@@ -599,7 +620,7 @@ def restore_floats(ws, floats, say):
         stand_on(ws)
     for i in missing:
         rec = floats[i]
-        cmd = launcher_for(rec["class"], ws) or rec.get("launch")
+        cmd = launcher_for_win(rec, ws) or rec.get("launch")
         if cmd:
             c = open_window(rec["class"], cmd, ws, floating=True)
         else:
@@ -632,7 +653,7 @@ def take_snapshot(ws):
     launch, offer, runs = {}, {}, []
     for s in steps:
         klass = s["win"]["class"]
-        launch[id(s["win"])] = launcher_for(klass, ws)
+        launch[id(s["win"])] = launcher_for_win(s["win"], ws)
         if kind_of(klass) == "terminal" and not launch[id(s["win"])]:
             how = terminal_record(s["win"])
             launch[id(s["win"])] = how.get("launch")
@@ -723,7 +744,7 @@ def record_from_steps(ws, name, steps, floats=()):
             {
                 "class": s["win"]["class"],
                 "title": str(s["win"].get("title", ""))[:60],
-                "launch": launcher_for(s["win"]["class"], ws) or s["win"].get("launch"),
+                "launch": launcher_for_win(s["win"], ws) or s["win"].get("launch"),
                 "after": s["after"],
                 "side": s["side"],
                 "share": round(s["share"], 3) if s.get("share") is not None else None,
@@ -865,11 +886,19 @@ def is_tiled(addr, ws):
 
 
 def open_window(klass, cmd, ws, floating=False):
-    """Launch, then wait for the window it produces. Returns the client, or None on timeout."""
-    before = {c["address"] for c in clients() if c["class"] == klass}
+    """Launch, then wait for the window it produces. Returns the client, or None on timeout.
+    A Quickshell summon is matched by title as well as class: the class alone is the whole
+    shell's, so any other Quickshell client appearing in the same moment would do."""
+    title = None
+    if klass == PLACEHOLDER_CLASS:
+        title = next((p for p in SUMMONS if cmd == SUMMONS[p]), None)
+    before = {c["address"] for c in clients()
+              if c["class"] == klass and (title is None or c["title"].startswith(title))}
     subprocess.Popen(f"setsid {cmd} >/dev/null 2>&1 &", shell=True)
-    return place_new(lambda c: c["class"] == klass and c["address"] not in before, ws, OPEN_TIMEOUT,
-                     floating=floating)
+    def appeared(c):
+        return c["class"] == klass and (title is None or c["title"].startswith(title)) \
+            and c["address"] not in before
+    return place_new(appeared, ws, OPEN_TIMEOUT, floating=floating)
 
 
 def open_placeholder(ws, win, floating=False):
@@ -1088,7 +1117,7 @@ def rebuild(ws, steps, assigned):
                 wait_until(lambda: is_tiled(c["address"], ws), 2.0)
                 addr[i] = c["address"]
                 continue
-            cmd = launcher_for(klass, ws) or s["win"].get("launch")
+            cmd = launcher_for_win(s["win"], ws) or s["win"].get("launch")
             if cmd:
                 c = open_window(klass, cmd, ws)
             else:
@@ -1192,7 +1221,7 @@ def _restore(ws, name, steps, floats, desk, say):
     live = tiled_on(ws)
     assigned = assign(steps, live)
     unopenable = {id(s["win"]) for i, s in enumerate(steps)
-                  if i not in assigned and not (launcher_for(s["win"]["class"], ws) or s["win"].get("launch"))}
+                  if i not in assigned and not (launcher_for_win(s["win"], ws) or s["win"].get("launch"))}
     for s in steps:
         if id(s["win"]) in unopenable:
             print(f"  ⚠️ {s['win']['class']} is missing and there is no launch command for it")
@@ -1735,7 +1764,7 @@ def desk_model(ws, name, all_clients, g):
             "i": i, "class": s["win"]["class"], "label": label_for(s["win"]["class"]),
             "title": str(s["win"].get("title", "")), "after": s["after"], "side": s["side"],
             "share": s.get("share"), "open": i in assigned,
-            "launchable": bool(launcher_for(s["win"]["class"], ws) or s["win"].get("launch")),
+            "launchable": bool(launcher_for_win(s["win"], ws) or s["win"].get("launch")),
             "offer": (s["win"].get("offer") or {}).get("program", ""),
             "x": round(x, 4), "y": round(y, 4), "w": round(w, 4), "h": round(h, 4),
             "block": [round(v, 4) for v in blocks[id(s["win"])]],
@@ -1749,7 +1778,7 @@ def desk_model(ws, name, all_clients, g):
         floating.append({
             "i": i, "class": rec["class"], "label": label_for(rec["class"]),
             "title": str(rec.get("title", "")), "open": i in float_found,
-            "launchable": bool(launcher_for(rec["class"], ws) or rec.get("launch")),
+            "launchable": bool(launcher_for_win(rec, ws) or rec.get("launch")),
             # In the same unit square as the tiled blocks: the screen below the bar.
             "x": round(fx, 4), "y": round(fy, 4), "w": round(fw, 4), "h": round(fh, 4),
         })
