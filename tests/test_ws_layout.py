@@ -12,6 +12,7 @@ from importlib.machinery import SourceFileLoader
 import pathlib
 import sys
 import unittest
+from unittest import mock
 
 sys.dont_write_bytecode = True   # the loader would otherwise cache a .pyc beside the engine
 
@@ -52,6 +53,70 @@ class Summons(unittest.TestCase):
         win = {"class": "org.gnome.TextEditor", "title": "🐦 Magpie — my novel"}
         self.assertEqual(engine.launcher_for_win(win, 3),
                          engine.launcher_for("org.gnome.TextEditor", 3))
+
+
+class WindowIdentity(unittest.TestCase):
+    """The shared class is never an identity: a Quickshell plugin window matches only within
+    its summons title, in the tiled matcher, the floating matcher and the cull (the probe's
+    four forbidden assignments, 2026-10-15)."""
+
+    @staticmethod
+    def win(title, address="0x1", klass="org.quickshell"):
+        return {"class": klass, "title": title, "address": address,
+                "at": [0, 0], "size": [100, 100], "floating": False}
+
+    def test_existing_shell_windows_never_fill_another_plugin_recording(self):
+        for recorded, actual in [("🐦 Magpie", "Holodeck"), ("Holodeck", "🐦 Magpie")]:
+            with self.subTest(recorded=recorded, actual=actual):
+                self.assertEqual(engine.assign([{"win": self.win(recorded)}],
+                                               [self.win(actual)]), {})
+
+    def test_floating_shell_windows_never_fill_another_plugin_recording(self):
+        for recorded, actual in [("🐦 Magpie", "Holodeck"), ("Holodeck", "🐦 Magpie")]:
+            with self.subTest(recorded=recorded, actual=actual):
+                self.assertEqual(engine.match_floats([self.win(recorded)],
+                                                     [self.win(actual)]), {})
+
+    def test_a_summons_window_whose_title_changed_still_matches(self):
+        """The identity is the title prefix, not the whole title — a plugin window's title
+        changes with its state, exactly as a Chrome tab's does."""
+        recorded = self.win("🐦 Magpie — Inbox")
+        actual = self.win("🐦 Magpie — Compose", "0x2")
+        self.assertEqual(engine.assign([{"win": recorded}], [actual]), {0: actual})
+        self.assertEqual(engine.match_floats([recorded], [actual]), {0: actual})
+
+    def test_ordinary_app_titles_may_change(self):
+        recorded = self.win("Old tab", klass="google-chrome")
+        actual = self.win("New tab", "0x2", klass="google-chrome")
+        self.assertEqual(engine.assign([{"win": recorded}], [actual]), {0: actual})
+        self.assertEqual(engine.match_floats([recorded], [actual]), {0: actual})
+
+    def test_the_cull_keeps_the_recorded_plugin_and_closes_the_stranger(self):
+        """close_extras buckets by identity: with Magpie recorded and a stray second shell
+        window on the desk, the stranger goes and Magpie stays."""
+        magpie = self.win("🐦 Magpie — Inbox", "0xkeep")
+        stray = self.win("Holodeck", "0xclose")
+        closed = []
+        with mock.patch.object(engine, "on_ws", return_value=[magpie, stray]), \
+             mock.patch.object(engine, "dispatch", side_effect=lambda cmd: closed.append(cmd)), \
+             mock.patch.object(engine, "wait_until", return_value=True):
+            engine.close_extras(4, {"🐦 Magpie": 1})
+        self.assertEqual(len(closed), 1)
+        self.assertIn("0xclose", closed[0])
+        self.assertNotIn("0xkeep", closed[0])
+
+    def test_the_cull_closes_a_placeholder_before_the_real_window(self):
+        """Within one identity the placeholder still goes first — the recorded window keeps
+        its place (the original placeholder-removal rule, unchanged)."""
+        placeholder = dict(self.win("🐦 Magpie — Inbox", "0xph"), placeholder="ab12cd")
+        real = self.win("🐦 Magpie — Inbox", "0xreal")
+        closed = []
+        with mock.patch.object(engine, "on_ws", return_value=[placeholder, real]), \
+             mock.patch.object(engine, "dispatch", side_effect=lambda cmd: closed.append(cmd)), \
+             mock.patch.object(engine, "wait_until", return_value=True):
+            engine.close_extras(4, {"🐦 Magpie": 1})
+        self.assertEqual(len(closed), 1)
+        self.assertIn("0xph", closed[0])
 
 
 if __name__ == "__main__":
