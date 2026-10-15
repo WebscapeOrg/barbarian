@@ -286,6 +286,16 @@ PLACEHOLDER_TITLE = re.compile(r"^Barbarian · missing (\S+) · ([0-9a-f]{6})(?:
 SUMMONS = {
     "🐦 Magpie": "omarchy-shell shell summon magpie '{}'",
 }
+
+
+def summons_title(win):
+    """The SUMMONS plugin a window belongs to, or None for every other window — including a
+    Quickshell window whose title names no known plugin. The class alone is the whole shell's
+    and is never an identity: a Magpie may fill a Magpie recording whose title has changed,
+    and nothing else (the probe's four forbidden assignments, 2026-10-15)."""
+    if win.get("class") != PLACEHOLDER_CLASS:
+        return None
+    return next((p for p in SUMMONS if win.get("title", "").startswith(p)), None)
 # The panel puts a placeholder up in well under a second; this only stops a panel too old to
 # know about placeholders from holding the restore up.
 PLACEHOLDER_TIMEOUT = 5.0
@@ -592,14 +602,17 @@ def put_float(c, rec, g):
 
 
 def match_floats(floats, live):
-    """Each recorded floating window to one on the desk: same class and title first, then class."""
+    """Each recorded floating window to one on the desk: same class and title first, then class.
+    Like assign(): a Quickshell plugin window matches only within its summons identity, never
+    by the shared class alone."""
     pool, found = list(live), {}
     for exact in (True, False):
         for i, rec in enumerate(floats):
             if i in found:
                 continue
             c = next((c for c in pool if c["class"] == rec["class"]
-                      and (not exact or c["title"][:60] == rec.get("title", "")[:60])), None)
+                      and (not exact or c["title"][:60] == rec.get("title", "")[:60])
+                      and summons_title(c) == summons_title(rec)), None)
             if c:
                 found[i] = c
                 pool.remove(c)
@@ -762,13 +775,15 @@ def record_from_steps(ws, name, steps, floats=()):
 def close_extras(ws, need):
     """Close what the recording does not list — never a seat. Placeholders go first, then
     floating strays (a dialog left behind), then the oldest tiled copies; the newest of a class
-    is the one kept."""
+    is the one kept. The buckets and the counts are by summons identity where there is one —
+    Quickshell plugin windows share a class, and a cull by class alone could keep the wrong
+    plugin's window and close the recorded one."""
     have = {}
     for c in on_ws(ws):
-        have.setdefault(c["class"], []).append(c)
+        have.setdefault(summons_title(c) or c["class"], []).append(c)
     closing = []
     for klass, windows in have.items():
-        if never_close(klass):
+        if never_close(windows[0]["class"]):
             continue
         windows = ([c for c in windows if c.get("placeholder")]
                    + [c for c in windows if c["floating"] and not c.get("placeholder")]
@@ -782,7 +797,9 @@ def close_extras(ws, need):
 
 
 def assign(steps, live):
-    """Match each recorded window to one on the desk: same class and title first, then same class."""
+    """Match each recorded window to one on the desk: same class and title first, then same class.
+    A Quickshell plugin window is only ever matched within its summons identity — its class is
+    the whole shell's — while ordinary apps keep the title-change fallback."""
     pool, assigned = list(by_position(live)), {}
     for exact in (True, False):
         for i, s in enumerate(steps):
@@ -790,7 +807,8 @@ def assign(steps, live):
                 continue
             w = s["win"]
             c = next((c for c in pool if c["class"] == w["class"]
-                      and (not exact or c["title"][:60] == w.get("title", "")[:60])), None)
+                      and (not exact or c["title"][:60] == w.get("title", "")[:60])
+                      and summons_title(c) == summons_title(w)), None)
             if c:
                 assigned[i] = c
                 pool.remove(c)
@@ -1193,7 +1211,8 @@ def _restore(ws, name, steps, floats, desk, say):
     # 1. Close anything the recording does not have — never a seat's terminal. A recorded
     #    floating window counts towards what the desk may keep, or closing would undo the
     #    placing that follows.
-    need = Counter(s["win"]["class"] for s in steps) + Counter(f["class"] for f in floats)
+    need = Counter(summons_title(s["win"]) or s["win"]["class"] for s in steps) \
+        + Counter(summons_title(f) or f["class"] for f in floats)
     closed = close_extras(ws, need)
     if closed:
         say()
