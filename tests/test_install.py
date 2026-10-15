@@ -37,11 +37,18 @@ class Install(unittest.TestCase):
         # A shell to find, so the installer does not take "nothing running" for "nothing locked",
         # and no renumber in flight. Stubbed rather than run, so the tests never depend on — or
         # wait for — what happens to be running on the machine.
-        self.stub("pgrep", 'case "$*" in *quickshell*) echo 1234 ;; *) exit 1 ;; esac')
+        self.stub("pgrep", 'case "$*" in *quickshell*)'
+                                 ' [ -f "$SHELL_ALIVE" ] && echo 1234 || exit 1 ;;'
+                                 ' *) exit 1 ;; esac')
+        # The shell stub is a killable thing: the first kill lands (and takes the marker the
+        # pgrep stub keys on), the second finds nothing — the shape the stop-first pass needs.
+        # A test that overrides quickshell without touching the marker models a headless pane
+        # whose kill cannot reach the IPC at all.
+        self.stub("quickshell", 'if [ -f "$SHELL_ALIVE" ]; then rm -f "$SHELL_ALIVE"; exit 0; '
+                                'else exit 1; fi')
         self.stub("omarchy-restart-shell", "exit 0")
-        # quickshell kill answers "nothing running", so the stop-first pass never reaches a
-        # real shell — the ordering itself is what the tests assert.
-        self.stub("quickshell", "exit 1")
+        self.shell_alive = self.tmp / "shell-alive"
+        self.shell_alive.touch()
         self.stub("systemd-run", "exit 0")
         # No waiter is armed yet: `is-active` on a unit that is not running exits 3.
         self.stub("systemctl", 'case "$*" in *is-active*) exit 3 ;; *) exit 0 ;; esac')
@@ -63,6 +70,7 @@ class Install(unittest.TestCase):
         env = {"HOME": str(self.home), "PATH": f"{self.bin}:{os.environ['PATH']}",
                "OMARCHY_PATH": str(self.bin),   # the scripts prepend "$OMARCHY_PATH/bin" — stubs must win
                "CALLS": str(self.calls), "COUNT": str(self.tmp / "count"),
+               "SHELL_ALIVE": str(self.shell_alive),
                "BARBARIAN_UNINSTALL_SETTLE": "0",
                "XDG_RUNTIME_DIR": os.environ.get("XDG_RUNTIME_DIR", "/tmp")}
         return subprocess.run([str(SCRIPT), *args], capture_output=True, text=True, env=env)
@@ -127,6 +135,15 @@ class Install(unittest.TestCase):
         self.assertTrue(self.called("quickshell"), result.stdout + result.stderr)
         self.assertIn("kill", self.called("quickshell")[0])
         self.assertTrue(self.called("omarchy-restart-shell"))
+
+    def test_a_kill_that_proves_nothing_writes_nothing(self):
+        """A headless pane's 'no kill landed, one still running' defers the whole run (2026-10-15:
+        blip's display-filter finding, enterprise's 'insufficient evidence' rule)."""
+        self.stub("quickshell", "exit 1")          # never reaches the IPC; the marker stands
+        result = self.run_install()
+        self.assertIn("could not prove the shell was stopped", result.stdout)
+        self.assertFalse((self.home / PLUGIN).exists())
+        self.assertTrue(self.called("systemd-run"))
 
     def test_a_locked_run_writes_nothing_and_arms_the_waiter(self):
         self.locked(True)

@@ -231,8 +231,23 @@ SHELL_STOPPED=0
 if [ "$plugin_write_pending" = 1 ] && ! busy; then
   omarchy_path="$(systemctl --user show-environment 2>/dev/null | sed -n 's/^OMARCHY_PATH=//p' | tail -n 1)"
   : "${omarchy_path:=$OMARCHY_PATH}"
-  while timeout 5 quickshell kill -p "$omarchy_path/shell" --any-display >/dev/null 2>&1; do :; done
-  SHELL_STOPPED=1
+  killed=0
+  while timeout 5 quickshell kill -p "$omarchy_path/shell" --any-display >/dev/null 2>&1; do
+    killed=1
+  done
+  # ⚠️ A KILL THAT KILLED NOTHING IS NOT PROOF NOTHING RUNS (2026-10-15, blip's headless pane
+  #    and enterprise's rule: "No running instances" is insufficient evidence for a restart).
+  #    If the command never reached the shell — a pane without the session's display context,
+  #    an IPC hiccup — the watcher is still alive, and writing would race its reload: the very
+  #    crash this stop exists to prevent. pgrep is the cross-check; a shell still standing
+  #    means this run writes nothing and the waiter retries.
+  if [ "$killed" = 1 ] || ! pgrep -u "$(id -u)" -x quickshell >/dev/null 2>&1; then
+    SHELL_STOPPED=1
+  else
+    arm_waiter
+    echo "barbarian: could not prove the shell was stopped (no kill landed and one is running) — held back; the next run tries again"
+    exit 0
+  fi
 fi
 
 for f in "${FILES[@]}"; do
