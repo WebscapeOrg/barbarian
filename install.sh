@@ -2,7 +2,7 @@
 # Barbarian — installer for the Omarchy Quickshell shell.
 #
 # Installs, user-space (no sudo), into ~/.config/omarchy:
-#   plugin/ → ~/.config/omarchy/plugins/tinkerbell.arrange/   (the HYPER+B bar-arrange panel,
+#   plugin/ → ~/.config/omarchy/plugins/atlas.arrange/   (the HYPER+B bar-arrange panel,
 #                                                              the HYPER+L layouts panel that
 #                                                              was Reptile, and the full-screen
 #                                                              theme grid)
@@ -45,11 +45,12 @@
 #    the next commit, a run by hand, or the machine's daily self-heal picks it up.
 set -u
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PLUGIN_ID="tinkerbell.arrange"
+PLUGIN_ID="atlas.arrange"
 PLUGIN_DIR="$HOME/.config/omarchy/plugins/$PLUGIN_ID"
 ENGINE_DST="$HOME/.config/omarchy/workspace-backgrounds/per-workspace-wallpaper.sh"
 LAYOUT_DST="$HOME/.config/omarchy/workspace-layout"
 OLD_PLUGIN_DIR="$HOME/.config/omarchy/plugins/tinkerbell.reptile"
+OLD_ARRANGE_DIR="$HOME/.config/omarchy/plugins/tinkerbell.arrange"
 WAIT_UNIT="barbarian-install-pending"
 # A plugin file written while the screen is locked cannot be compiled then: restarting Quickshell
 # would unlock the machine. This file says a restart is owed, and the next free run does it.
@@ -319,7 +320,69 @@ PY
   fi
   if grep -q "tinkerbell.reptile" "$HOME/.config/hypr/bindings.lua" 2>/dev/null; then
     echo "barbarian: keybind reminder — in ~/.config/hypr/bindings.lua change"
-    echo "  omarchy-shell tinkerbell.reptile toggle  →  omarchy-shell tinkerbell.arrange layouts"
+    echo "  omarchy-shell tinkerbell.reptile toggle  →  omarchy-shell atlas.arrange layouts"
+  fi
+fi
+
+# Q-104 (2026-10-24): the plugin id renamed with the machine — tinkerbell.arrange became
+# atlas.arrange. Unlike Reptile's removal, the bar entry RENAMES in place, so the panel
+# keeps its lane and position; only the folder under the old id goes. Same file-first
+# order plugin-uninstall waits for: the rename lands, then the trash.
+if [ -d "$OLD_ARRANGE_DIR" ] && [ "$PLUGIN_ID" = "atlas.arrange" ] && ! busy; then
+  python3 - <<'PY'
+import json, os, tempfile
+
+OLD, NEW = "tinkerbell.arrange", "atlas.arrange"
+LANES = ("left", "center", "right")
+
+def rewrite(path, transform):
+    if not os.path.exists(path):
+        return
+    with open(path) as f:
+        data = json.load(f)
+    if not transform(data):
+        return
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), prefix="." + os.path.basename(path) + ".")
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(data, f, indent=2)
+            f.write("\n")
+        os.replace(tmp, path)
+    except BaseException:
+        os.unlink(tmp)
+        raise
+
+def rename_layout(data):
+    layout = data.get("bar", {}).get("layout", {})
+    changed = False
+    for lane in LANES:
+        for e in layout.get(lane, []):
+            if e.get("id") == OLD:
+                e["id"] = NEW
+                changed = True
+    return changed
+
+def rename_sidecar(data):
+    changed = False
+    for lane in LANES:
+        for r in data.get(lane, []):
+            if (r.get("entry") or {}).get("id") == OLD:
+                r["entry"]["id"] = NEW
+                changed = True
+    return changed
+
+home = os.path.expanduser("~")
+rewrite(home + "/.config/omarchy/shell.json", rename_layout)
+rewrite(home + "/.config/omarchy/bar-hidden.json", rename_sidecar)
+PY
+  if "$HERE/plugin/bin/plugin-uninstall" tinkerbell.arrange; then
+    echo "barbarian: the plugin became atlas.arrange — the old folder went to the trash"
+  else
+    echo "barbarian: the old tinkerbell.arrange folder is still installed; the next run tries again"
+  fi
+  if grep -q "tinkerbell.arrange" "$HOME/.config/hypr/bindings.lua" 2>/dev/null; then
+    echo "barbarian: keybind reminder — in ~/.config/hypr/bindings.lua change"
+    echo "  omarchy-shell tinkerbell.arrange …  →  omarchy-shell atlas.arrange …"
   fi
 fi
 

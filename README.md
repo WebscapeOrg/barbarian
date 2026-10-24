@@ -11,7 +11,7 @@ desk-layouts panel opened with `HYPER+L`, where every desk's recording is drawn 
 blocks — drag to swap, drag the line to resize, `×` removes, `+` adds, saved as you
 go — plus the quick-apps tab that gives an app a key of its own. One plugin, one
 installer, one id: the keybind is now
-`omarchy-shell tinkerbell.arrange layouts` (the old `tinkerbell.reptile` target is
+`omarchy-shell atlas.arrange layouts` (the old `tinkerbell.reptile` target is
 migrated away by `install.sh`, which also prints the keybind reminder while
 `~/.config/hypr/bindings.lua` still names the old id). Reptile's commit history was
 grafted in — `git log --follow plugin/Reptile.qml`.
@@ -79,7 +79,7 @@ passes are logged in `~/.local/state/omarchy/barbarian-renumber.log`.
 
 The drag preview is independent of the lane layout: pointer movement never reorders the
 model. Neighbors and the landing animate over 160 ms; the held tile has no easing or
-lag. Set `"reduce-motion": true` on the `tinkerbell.arrange` entry in `shell.json` to
+lag. Set `"reduce-motion": true` on the `atlas.arrange` entry in `shell.json` to
 disable these animations. Qt does not currently expose an OS reduced-motion preference.
 
 It was built by a Claude Code agent on the author's machine, extracted from the
@@ -91,7 +91,7 @@ The palette button beside the view toggle, or `t`, closes the panel and opens a 
 of every theme Omarchy can see, in the look of
 [omarchy-theme-manager's grid](https://github.com/mtolhuys/omarchy-theme-manager): Installed,
 Omarchy defaults, Hidden and Broken links, each a row of previews. It is also reachable without
-the panel: `omarchy-shell shell toggle tinkerbell.arrange '{}'` (bind it to a key). The button is
+the panel: `omarchy-shell shell toggle atlas.arrange '{}'` (bind it to a key). The button is
 dimmed while the panel has changes waiting; apply or cancel them first, because applying rewrites
 `shell.json` and the shell rebuilds its overlays when that file changes.
 
@@ -119,12 +119,12 @@ keeps in line.
 
 ## What's inside
 
-- **`plugin/`** — the Quickshell bar widget (`tinkerbell.arrange`) and, as the same plugin's
+- **`plugin/`** — the Quickshell bar widget (`atlas.arrange`) and, as the same plugin's
   overlay entry point, the theme grid (`ThemeRemover.qml` and the `Theme*.qml` beside it). It draws nothing
   on the bar (zero width); it exists to host the panel and its IPC target, toggled
-  with `qs -p /usr/share/omarchy/shell ipc call tinkerbell.arrange toggle`.
+  with `qs -p /usr/share/omarchy/shell ipc call atlas.arrange toggle`.
   `Reptile.qml`, instantiated by `Panel.qml`, is the merged-in layouts panel (HYPER+L,
-  via `ipc call tinkerbell.arrange layouts`): its own window, header and keyboard
+  via `ipc call atlas.arrange layouts`): its own window, header and keyboard
   model, riding the same IPC target.
   On close it writes the new order straight into Omarchy's `shell.json` (whole
   entries move, so each widget's per-widget settings travel with it) and parks
@@ -162,10 +162,12 @@ cd barbarian && ./install.sh
 ```
 
 Installs user-space only: the plugin to
-`~/.config/omarchy/plugins/tinkerbell.arrange/`, the engine to
+`~/.config/omarchy/plugins/atlas.arrange/`, the engine to
 `~/.config/omarchy/workspace-backgrounds/`. Idempotent — re-running is the repair.
-The plugin id stays `tinkerbell.arrange` for history's sake; it is load-bearing in
-`shell.json`, keybinds and the engine, so it was left alone through the extraction.
+The plugin id is `atlas.arrange` since the machine renamed (Q-104, 2026-10-24); it is
+load-bearing in `shell.json`, keybinds and the engine. Before the rename it was
+`tinkerbell.arrange`, and the installer migrates machines off the old id — the bar
+entry renames in place, the old folder trashes, and the keybind reminder prints.
 
 After installing changed plugin code, run `omarchy restart shell` while the session is
 unlocked. The shell's widget reload can reuse the QML engine's cached code; a full shell

@@ -37,7 +37,7 @@
 # BARBARIAN_UNINSTALL_SETTLE (2) seconds of quiet between the trashes.
 #
 # Refuses: no id, an id with a slash, a folder that is not an installed plugin (no manifest),
-# any id still named by the layout after the wait, and tinkerbell.arrange itself — the panel
+# any id still named by the layout after the wait, and atlas.arrange itself — the panel
 # never lists itself, and this script lives inside the folder it would be trashing. A batch
 # with one bad id is refused whole: folders only start leaving once every id checks out.
 set -u
@@ -54,7 +54,7 @@ if [ -z "${WAYLAND_DISPLAY:-}" ]; then
 fi
 
 RESTART_STAMP="$HOME/.local/state/omarchy/barbarian-restart-owed"
-SELF_ID="tinkerbell.arrange"
+SELF_ID="atlas.arrange"
 ENTRY_WAIT="${BARBARIAN_UNINSTALL_WAIT:-10}"
 SETTLE="${BARBARIAN_UNINSTALL_SETTLE:-2}"
 
