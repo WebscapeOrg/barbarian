@@ -37,10 +37,12 @@ that already holds the right windows in the right arrangement is not rebuilt; if
 dragged by hand since the recording, it gets one resize — the same move as SUPER+/- — and nothing
 else moves.
 
-⚠️ RESTORE CLOSES WINDOWS, so two rules are hard-coded rather than configurable:
-  · an agent seat's terminal is NEVER closed (`NEVER_CLOSE`), because closing one leaves the seat
-    running with nothing showing it — the exact fault fixed on 2026-08-11;
+⚠️ RESTORE CLOSES WINDOWS, so one rule is hard-coded rather than configurable:
   · closing is `window.close`, which is a polite request the app can refuse, never a kill.
+
+(The other hard rule until 2026-10-24: an agent seat's terminal was never closed, because
+closing one left the seat running with nothing showing it. Dave retired the seven seats
+that day — Q-024 in enterprise — and the rule went with them.)
 """
 
 import functools
@@ -67,15 +69,7 @@ OPEN_TIMEOUT = 30.0
 # is a couple of dozen pixels on the 5K — below what a hand-drag or a SUPER+/- step moves).
 SHARE_TOLERANCE = 0.01
 
-# Seats whose terminal must survive a restore even when it is not in the recording.
-NEVER_CLOSE = {
-    "claude-atlas", "codex-atlas",
-    "claude-hazel", "codex-hazel",
-    "claude-gandalf", "codex-gandalf",
-    "claude-kirk",
-}
-
-# The quick apps are spared too: a window summoned onto this desk by its own key is a guest, not a
+# The quick apps are spared: a window summoned onto this desk by its own key is a guest, not a
 # stray, and closing it would throw away the page the key exists to keep.
 #
 # ⚠️ READ FROM THE SAME LIST quick-app uses, never copied into this file. A second copy of the apps
@@ -95,7 +89,7 @@ def quick_app_prefixes():
 
 
 def never_close(klass):
-    return klass in NEVER_CLOSE or any(klass.startswith(p) for p in quick_app_prefixes())
+    return any(klass.startswith(p) for p in quick_app_prefixes())
 
 # How to put a window back when the recording has one and the desk does not. Keyed by window class.
 # A class missing from here is still recorded; it simply cannot be re-opened, and restore says so
@@ -129,13 +123,6 @@ LAUNCHERS = {
     # which points nxplayer at the repo-tracked Mac-mini connection on both machines.
     "org.remmina.Remmina": "uwsm-app -- remmina",
     "Nxplayer.bin": "/home/anotherdave/.local/bin/mac-desk",
-    "claude-atlas": f"alacritty --class claude-atlas --title '🗺️ Atlas' -e {ATTACH_DIR}/atlas-claude-attach.sh",
-    "codex-atlas": f"alacritty --class codex-atlas --title '🤖 Atlas Codex' -e {ATTACH_DIR}/atlas-codex-attach.sh",
-    "claude-hazel": f"alacritty --class claude-hazel --title '🐿️ Hazel' -e {ATTACH_DIR}/hazel-claude-attach.sh",
-    "codex-hazel": f"alacritty --class codex-hazel --title '🤖 Hazel Codex' -e {ATTACH_DIR}/hazel-codex-attach.sh",
-    "claude-gandalf": f"alacritty --class claude-gandalf --title '🧙 Gandalf' -e {ATTACH_DIR}/claude-gandalf-attach.sh",
-    "codex-gandalf": f"alacritty --class codex-gandalf --title '🤖 Gandalf Codex' -e {ATTACH_DIR}/gandalf-codex-attach.sh",
-    "claude-kirk": f"alacritty --class claude-kirk --title '🖖 Kirk' -e {ATTACH_DIR}/kirk-claude-attach.sh",
 }
 
 # ⚠️ EVERY PLAIN CHROME WINDOW HAS THE SAME CLASS, so which profile to re-open depends on the desk,
@@ -818,8 +805,9 @@ def assign(steps, live):
 def same_arrangement(live, steps, assigned):
     """Is the desk already arranged as the recording says? Compared by shape and by which class
     sits in each cell — never by size, and never by title (a Chrome title changes with the tab).
-    A tiled window that is here but not in the recording (a seat kept by NEVER_CLOSE) is left out
-    of the comparison: the recorded windows only have to be arranged right among themselves."""
+    A tiled window that is here but not in the recording (a quick app summoned by its own key)
+    is left out of the comparison: the recorded windows only have to be arranged right among
+    themselves."""
     mine = {c["address"] for c in assigned.values()}
     if len(mine) != len(steps):
         return False
@@ -1149,8 +1137,8 @@ def rebuild(ws, steps, assigned):
             if cmd:
                 opened.append(klass)
 
-        # Whatever was tiled here and is in no step (a seat kept by NEVER_CLOSE) goes back into
-        # the tree at the end rather than being left floating.
+        # Whatever was tiled here and is in no step (a quick app summoned by its own key) goes
+        # back into the tree at the end rather than being left floating.
         set_default_split_ratio(usual_ratio)
         leftovers = [c for c in present if c["address"] not in addr.values()]
         for c in leftovers:
@@ -1647,13 +1635,6 @@ LABELS = {
     "google-chrome": "Chrome",
     "Nxplayer.bin": "NoMachine",
     "org.remmina.Remmina": "Remmina",
-    "claude-atlas": "Claude · Atlas",
-    "codex-atlas": "Codex · Atlas",
-    "claude-hazel": "Claude · Hazel",
-    "codex-hazel": "Codex · Hazel",
-    "claude-gandalf": "Claude · Gandalf",
-    "codex-gandalf": "Codex · Gandalf",
-    "claude-kirk": "Claude · Kirk",
     "foot": "Terminal",
     "Alacritty": "Terminal",
     "kitty": "Terminal",
@@ -1673,8 +1654,6 @@ APP_ORDER = [
     "chrome-mail.google.com__mail_-Default", "chrome-calendar.google.com__calendar_r_week-Default",
     "com.rtosta.zapzap", "bluebubbles", "org.gnome.Nautilus", "google-chrome", "Nxplayer.bin",
     "org.remmina.Remmina", "chrome-atlas.anotherdave.net__-Default", "chrome-mermaid.ai__app_dashboard-Default",
-    "claude-atlas", "codex-atlas", "claude-hazel", "codex-hazel", "claude-gandalf", "codex-gandalf",
-    "claude-kirk",
 ]
 
 
