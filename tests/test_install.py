@@ -7,6 +7,7 @@ Every run uses a throwaway HOME and a stub PATH, so the live plugin, the live sh
 are never touched: `omarchy-shell` answers whatever the test says the lock is, and
 `omarchy-restart-shell`, `systemd-run` and `systemctl` only write down that they were called.
 """
+import json
 import os
 import shutil
 import subprocess
@@ -17,7 +18,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SCRIPT = ROOT / "install.sh"
-PLUGIN = ".config/omarchy/plugins/tinkerbell.arrange"
+PLUGIN = ".config/omarchy/plugins/atlas.arrange"
 
 STUB = """#!/usr/bin/env bash
 echo "$(basename "$0") $*" >> "$CALLS"
@@ -109,18 +110,49 @@ class Install(unittest.TestCase):
             'bind("HYPER+L", "omarchy-shell tinkerbell.reptile toggle")\n')
         result = self.run_install()
         self.assertIn("keybind reminder", result.stdout)
-        self.assertIn("omarchy-shell tinkerbell.arrange layouts", result.stdout)
+        self.assertIn("omarchy-shell atlas.arrange layouts", result.stdout)
+
+    def test_the_old_arrange_id_is_migrated_in_place(self):
+        """Q-104: the bar entry renames (the panel keeps its lane), the folder trashes."""
+        old = self.home / ".config/omarchy/plugins/tinkerbell.arrange"
+        old.mkdir(parents=True)
+        (old / "manifest.json").write_text("{}\n")
+        shell = self.home / ".config/omarchy/shell.json"
+        shell.parent.mkdir(parents=True, exist_ok=True)
+        shell.write_text(json.dumps({"bar": {"layout": {"right": [
+            {"id": "tinkerbell.arrange"}, {"id": "omarchy.clock"}]}}}) + "\n")
+        hidden = self.home / ".config/omarchy/bar-hidden.json"
+        hidden.write_text(json.dumps({"left": [], "center": [],
+                                      "right": [{"index": 0, "entry": {"id": "tinkerbell.arrange"}}]}) + "\n")
+        result = self.run_install()
+        self.assertFalse(old.exists(), result.stdout + result.stderr)
+        layout = json.loads(shell.read_text())["bar"]["layout"]
+        self.assertEqual([e["id"] for e in layout["right"]], ["atlas.arrange", "omarchy.clock"])
+        self.assertEqual(json.loads(hidden.read_text())["right"],
+                         [{"index": 0, "entry": {"id": "atlas.arrange"}}])
+        self.assertIn("went to the trash", result.stdout)
+
+    def test_the_arrange_migration_reminds_while_the_keybind_still_names_the_old_id(self):
+        (self.home / ".config/omarchy/plugins/tinkerbell.arrange").mkdir(parents=True)
+        (self.home / ".config/omarchy/plugins/tinkerbell.arrange/manifest.json").write_text("{}\n")
+        (self.home / ".config/hypr/bindings.lua").parent.mkdir(parents=True)
+        (self.home / ".config/hypr/bindings.lua").write_text(
+            'bind("HYPER+B", "omarchy-shell tinkerbell.arrange toggle")\n')
+        result = self.run_install()
+        self.assertIn("keybind reminder", result.stdout)
+        self.assertIn("omarchy-shell atlas.arrange", result.stdout)
 
     def test_no_ghost_ids_in_what_ships(self):
-        """Q-101: one identity — nothing that installs may name the old id; only the
-        installer itself (which removes it) and the docs may."""
+        """Q-101, Q-104: one identity — nothing that installs may name a retired id; only
+        the installer itself (which removes them) and the docs may."""
         hits = []
-        for folder in ("plugin", "engine", "hooks"):
-            for path in (ROOT / folder).rglob("*"):
-                if path.is_file() and "__pycache__" in path.parts:
-                    continue
-                if path.is_file() and "tinkerbell.reptile" in path.read_text(errors="ignore"):
-                    hits.append(str(path.relative_to(ROOT)))
+        for retired in ("tinkerbell.reptile", "tinkerbell.arrange"):
+            for folder in ("plugin", "engine", "hooks"):
+                for path in (ROOT / folder).rglob("*"):
+                    if path.is_file() and "__pycache__" in path.parts:
+                        continue
+                    if path.is_file() and retired in path.read_text(errors="ignore"):
+                        hits.append(f"{retired}: {path.relative_to(ROOT)}")
         self.assertEqual(hits, [])
 
     def test_an_unlocked_run_installs_and_restarts_the_shell(self):

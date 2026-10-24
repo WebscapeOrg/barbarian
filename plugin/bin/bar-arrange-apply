@@ -17,7 +17,7 @@
 #
 # Entries travel as whole objects, so per-widget settings (the clock's formats, the
 # strip's own config) survive a reorder, a lane change and a hide/show round-trip. Ids
-# in the file but not in the arguments (the invisible tinkerbell.arrange widget itself)
+# in the file but not in the arguments (the invisible atlas.arrange widget itself)
 # keep their place at the end of the lane they were already in. Without a WS directive
 # (a stale pre-mode panel) the strip simply stays where it is. Writes are tmp+rename,
 # so a crash mid-write cannot half-eat the bar.

@@ -1,6 +1,6 @@
 # Barbarian — agent notes
 
-The bar-arranger panel for the Omarchy Quickshell bar (HYPER+B), with the former Reptile layouts panel merged in (HYPER+L). One plugin, one IPC id: `tinkerbell.arrange`.
+The bar-arranger panel for the Omarchy Quickshell bar (HYPER+B), with the former Reptile layouts panel merged in (HYPER+L). One plugin, one IPC id: `atlas.arrange`.
 
 ## Asking Dave for decisions
 

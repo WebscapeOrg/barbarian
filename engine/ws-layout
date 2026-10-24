@@ -392,7 +392,7 @@ def card_down():
 def reptile_ipc(*args):
     # The panel rides Barbarian's target since the merge (2026-10-07, Q-101): one id everywhere.
     try:
-        subprocess.run(["omarchy-shell", "-q", "tinkerbell.arrange", *args],
+        subprocess.run(["omarchy-shell", "-q", "atlas.arrange", *args],
                        capture_output=True, timeout=5)
     except Exception:
         pass

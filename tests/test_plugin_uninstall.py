@@ -31,7 +31,7 @@ class Uninstall(unittest.TestCase):
         self.home = self.tmp / "home"
         self.plugins = self.home / ".config/omarchy/plugins"
         self.plugins.mkdir(parents=True)
-        for pid in ("some.plug", "other.plug", "tinkerbell.arrange"):
+        for pid in ("some.plug", "other.plug", "atlas.arrange"):
             (self.plugins / pid).mkdir()
             (self.plugins / pid / "manifest.json").write_text("{}\n")
         (self.plugins / "not.a.plugin").mkdir()          # no manifest: not a plugin
@@ -148,9 +148,9 @@ class Uninstall(unittest.TestCase):
         self.assertTrue((self.plugins / "other.plug" / "manifest.json").exists())
 
     def test_barbarian_refuses_to_uninstall_itself(self):
-        result = self.run_script("tinkerbell.arrange")
+        result = self.run_script("atlas.arrange")
         self.assertNotEqual(result.returncode, 0)
-        self.assertTrue((self.plugins / "tinkerbell.arrange" / "manifest.json").exists())
+        self.assertTrue((self.plugins / "atlas.arrange" / "manifest.json").exists())
 
 
 if __name__ == "__main__":

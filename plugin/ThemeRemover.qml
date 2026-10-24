@@ -7,7 +7,7 @@ import qs.Commons
 // Remove on each (Dave, 2026-09-25: "fold this feature into Barbarian"). It is this plugin's
 // second entry point, the `overlay` beside the bar widget, so the shell loads it once rather than
 // once per bar. Open it with the Themes button (or `t`) in the panel, or
-// `omarchy-shell shell toggle tinkerbell.arrange '{}'`: with an overlay in the manifest, the
+// `omarchy-shell shell toggle atlas.arrange '{}'`: with an overlay in the manifest, the
 // shell's own summon and toggle reach this and not the panel, which keeps its own IPC target.
 // Kept loaded between summons so ThemeStore can keep hidden themes out of Omarchy's own picker.
 Item {

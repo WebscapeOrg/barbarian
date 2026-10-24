@@ -88,8 +88,8 @@ import "." as Reordering
 Panel {
   id: root
 
-  moduleName: "tinkerbell.arrange"
-  ipcTarget: "tinkerbell.arrange"
+  moduleName: "atlas.arrange"
+  ipcTarget: "atlas.arrange"
   // ⚠️ ONE handler per IPC target — Quickshell keeps the first registered and silently drops
   // the rest (the merge found this the hard way, 2026-10-07: the layouts panel's handler
   // registered first as a child and evicted the auto-handler whose toggle HYPER+B calls,
@@ -98,7 +98,7 @@ Panel {
   // panel's key, and the engines' — Reptile.qml defers to it entirely (its manageIpc: false).
   manageIpc: false
   IpcHandler {
-    target: "tinkerbell.arrange"
+    target: "atlas.arrange"
     function open(): void { root.open() }
     function close(): void { root.close() }
     function toggle(): void { root.toggle() }
@@ -136,7 +136,7 @@ Panel {
   // these, and only hides a theme's shipped images, which are not his to delete.
   readonly property string userBgDir: Quickshell.env("HOME") + "/.config/omarchy/backgrounds/"
   // This widget must never list (or reorder away) itself.
-  readonly property string selfId: "tinkerbell.arrange"
+  readonly property string selfId: "atlas.arrange"
 
   readonly property color foreground: bar ? bar.barForeground : Color.foreground
   readonly property color accent: Color.accent
@@ -1357,8 +1357,8 @@ Panel {
     if (dirty) return
     close()
     var shell = root.bar ? root.bar.shell : null
-    if (shell && typeof shell.summon === "function") shell.summon("tinkerbell.arrange", "{}")
-    else Quickshell.execDetached(["omarchy-shell", "shell", "summon", "tinkerbell.arrange", "{}"])
+    if (shell && typeof shell.summon === "function") shell.summon("atlas.arrange", "{}")
+    else Quickshell.execDetached(["omarchy-shell", "shell", "summon", "atlas.arrange", "{}"])
   }
 
   onOpenedChanged: {
@@ -1429,7 +1429,7 @@ Panel {
   // Reptile's layouts panel (merged in 2026-10-07, Q-101): its own window, header and
   // keyboard model, instantiated here because a plugin has one bar widget and this is it.
   // Its IPC handler (in Reptile.qml) rides this panel's target — HYPER+L calls
-  // `omarchy-shell tinkerbell.arrange layouts`. The shell injects `bar` only into the
+  // `omarchy-shell atlas.arrange layouts`. The shell injects `bar` only into the
   // widget IT loads (this root), and KeyboardPanel positions its card from the bar's
   // window — without the hand-down the child's panel mapped a card built from a null bar
   // and painted nothing (found 2026-10-07, the invisible HYPER+L).

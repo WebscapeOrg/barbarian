@@ -83,7 +83,7 @@ case "${1:-}" in
     ;;
   ipc)
     nested_env; shift
-    HOME="$TEST_HOME" exec timeout 10 qs -p "$WORK/config/shell.qml" ipc call tinkerbell.arrange "$@"
+    HOME="$TEST_HOME" exec timeout 10 qs -p "$WORK/config/shell.qml" ipc call atlas.arrange "$@"
     ;;
   key)
     nested_env; shift
