@@ -195,7 +195,7 @@ Panel {
   // centre + right · "2" icons left, strip centre (stock) · "3" icons left + centre,
   // strip far right. Derived from shell.json on every open and applied on close.
   property string mode: "2"
-  // The strip's widget id as found in the layout (tinkerbell.workspaces here,
+  // The strip's widget id as found in the layout (enterprise.workspaces here,
   // omarchy.workspaces stock) — the apply script moves it whole between sections.
   property string wsWidgetId: ""
   // The background picker (Dave, 2026-09-01): which desk's thumbnail strip is open
@@ -291,9 +291,8 @@ Panel {
       "omarchy.network": "Network",
       "omarchy.audio": "Audio",
       "omarchy.monitor": "System Monitor",
-      "tinkerbell.mail": "Mail",
-      "tinkerbell.messages": "Messages",
-      "tinkerbell.tray": "System Tray",
+      "enterprise.mail": "Mail",
+      "enterprise.tray": "System Tray",
       "limehawk.vpn": "VPN",
       "pestov.apple-music": "Apple Music",
       "jankeesvw.downloads": "Downloads",
@@ -330,9 +329,8 @@ Panel {
       "digitalfrost84.auto-dark-mode": "󰔎",
       "io.github.thisisgm.omapods": "󱡏",
       "omarchy.tray": "󰍜",
-      "tinkerbell.tray": "󰍜",
-      "tinkerbell.mail": "",
-      "tinkerbell.messages": "",
+      "enterprise.tray": "󰍜",
+      "enterprise.mail": "",
       "omarchy.agents": "󱚣",
       "limehawk.vpn": "",
       "omarchy.network": "󰈀",
