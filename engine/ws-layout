@@ -69,7 +69,7 @@ SHARE_TOLERANCE = 0.01
 
 # Seats whose terminal must survive a restore even when it is not in the recording.
 NEVER_CLOSE = {
-    "claude-tinkerbell", "codex-tinkerbell",
+    "claude-atlas", "codex-atlas",
     "claude-hazel", "codex-hazel",
     "claude-gandalf", "codex-gandalf",
     "claude-kirk",
@@ -129,8 +129,8 @@ LAUNCHERS = {
     # which points nxplayer at the repo-tracked Mac-mini connection on both machines.
     "org.remmina.Remmina": "uwsm-app -- remmina",
     "Nxplayer.bin": "/home/anotherdave/.local/bin/mac-desk",
-    "claude-tinkerbell": f"alacritty --class claude-tinkerbell --title '🧚 Tinkerbell' -e {ATTACH_DIR}/tinkerbell-claude-attach.sh",
-    "codex-tinkerbell": f"alacritty --class codex-tinkerbell --title '🤖 Tinkerbell Codex' -e {ATTACH_DIR}/tinkerbell-codex-attach.sh",
+    "claude-atlas": f"alacritty --class claude-atlas --title '🗺️ Atlas' -e {ATTACH_DIR}/atlas-claude-attach.sh",
+    "codex-atlas": f"alacritty --class codex-atlas --title '🤖 Atlas Codex' -e {ATTACH_DIR}/atlas-codex-attach.sh",
     "claude-hazel": f"alacritty --class claude-hazel --title '🐿️ Hazel' -e {ATTACH_DIR}/hazel-claude-attach.sh",
     "codex-hazel": f"alacritty --class codex-hazel --title '🤖 Hazel Codex' -e {ATTACH_DIR}/hazel-codex-attach.sh",
     "claude-gandalf": f"alacritty --class claude-gandalf --title '🧙 Gandalf' -e {ATTACH_DIR}/claude-gandalf-attach.sh",
@@ -1647,8 +1647,8 @@ LABELS = {
     "google-chrome": "Chrome",
     "Nxplayer.bin": "NoMachine",
     "org.remmina.Remmina": "Remmina",
-    "claude-tinkerbell": "Claude · Tinkerbell",
-    "codex-tinkerbell": "Codex · Tinkerbell",
+    "claude-atlas": "Claude · Atlas",
+    "codex-atlas": "Codex · Atlas",
     "claude-hazel": "Claude · Hazel",
     "codex-hazel": "Codex · Hazel",
     "claude-gandalf": "Claude · Gandalf",
@@ -1673,7 +1673,7 @@ APP_ORDER = [
     "chrome-mail.google.com__mail_-Default", "chrome-calendar.google.com__calendar_r_week-Default",
     "com.rtosta.zapzap", "bluebubbles", "org.gnome.Nautilus", "google-chrome", "Nxplayer.bin",
     "org.remmina.Remmina", "chrome-atlas.anotherdave.net__-Default", "chrome-mermaid.ai__app_dashboard-Default",
-    "claude-tinkerbell", "codex-tinkerbell", "claude-hazel", "codex-hazel", "claude-gandalf", "codex-gandalf",
+    "claude-atlas", "codex-atlas", "claude-hazel", "codex-hazel", "claude-gandalf", "codex-gandalf",
     "claude-kirk",
 ]
 
