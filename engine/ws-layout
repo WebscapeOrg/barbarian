@@ -109,8 +109,8 @@ LAUNCHERS = {
         "omarchy-launch-webapp 'https://mail.google.com/mail/?authuser=david.reinecke@gmail.com#inbox' --profile-directory=Default",
     "chrome-calendar.google.com__calendar_r_week-Default":
         "omarchy-launch-webapp 'https://calendar.google.com/calendar/r/week?authuser=david.reinecke@gmail.com' --profile-directory=Default",
-    "chrome-tinkerbell.anotherdave.net__-Default":
-        "omarchy-launch-webapp 'https://tinkerbell.anotherdave.net/' --profile-directory=Default",
+    "chrome-atlas.anotherdave.net__-Default":
+        "omarchy-launch-webapp 'https://atlas.anotherdave.net/' --profile-directory=Default",
     "chrome-mermaid.ai__app_dashboard-Default":
         "omarchy-launch-webapp 'https://mermaid.ai/app/dashboard' --profile-directory=Default",
     "com.rtosta.zapzap": "uwsm-app -- zapzap",
@@ -1639,7 +1639,7 @@ LABELS = {
     "chrome-calendar.google.com__calendar_r_week-Profile_1": "Calendar · Webscape",
     "chrome-mail.google.com__mail_-Default": "Mail · Personal",
     "chrome-calendar.google.com__calendar_r_week-Default": "Calendar · Personal",
-    "chrome-tinkerbell.anotherdave.net__-Default": "Tinkerbell",
+    "chrome-atlas.anotherdave.net__-Default": "Atlas",
     "chrome-mermaid.ai__app_dashboard-Default": "Mermaid",
     "com.rtosta.zapzap": "WhatsApp",
     "bluebubbles": "Messages",
@@ -1672,7 +1672,7 @@ APP_ORDER = [
     "chrome-mail.google.com__mail_-Profile_1", "chrome-calendar.google.com__calendar_r_week-Profile_1",
     "chrome-mail.google.com__mail_-Default", "chrome-calendar.google.com__calendar_r_week-Default",
     "com.rtosta.zapzap", "bluebubbles", "org.gnome.Nautilus", "google-chrome", "Nxplayer.bin",
-    "org.remmina.Remmina", "chrome-tinkerbell.anotherdave.net__-Default", "chrome-mermaid.ai__app_dashboard-Default",
+    "org.remmina.Remmina", "chrome-atlas.anotherdave.net__-Default", "chrome-mermaid.ai__app_dashboard-Default",
     "claude-tinkerbell", "codex-tinkerbell", "claude-hazel", "codex-hazel", "claude-gandalf", "codex-gandalf",
     "claude-kirk",
 ]
