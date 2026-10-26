@@ -1,5 +1,6 @@
 import QtQuick
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 
 // The grid: sections of theme cards, a footer naming the selected theme with its action, and the
@@ -271,10 +272,10 @@ Item {
   }
 
   function toneColor(tone) {
-    if (tone === "accent") return Color.accent
-    if (tone === "urgent") return Color.urgent
-    if (tone === "muted") return Util.alpha(Color.foreground, 0.55)
-    return Color.foreground
+    if (tone === "accent") return Commons.Color.accent
+    if (tone === "urgent") return Commons.Color.urgent
+    if (tone === "muted") return Util.alpha(Commons.Color.foreground, 0.55)
+    return Commons.Color.foreground
   }
 
   // The wallpaper, dimmed, rather than the windows underneath: busy windows showing through made
@@ -288,7 +289,7 @@ Item {
 
   Rectangle {
     anchors.fill: parent
-    color: Color.background
+    color: Commons.Color.background
   }
 
   Image {
@@ -302,7 +303,7 @@ Item {
 
   Rectangle {
     anchors.fill: parent
-    color: Util.alpha(Color.background, 0.8)
+    color: Util.alpha(Commons.Color.background, 0.8)
   }
 
   MouseArea {
@@ -419,7 +420,7 @@ Item {
                 anchors.right: parent.right
                 anchors.bottom: parent.bottom
                 text: sectionBlock.modelData.themes.length
-                color: Util.alpha(Color.foreground, 0.6)
+                color: Util.alpha(Commons.Color.foreground, 0.6)
                 font.pixelSize: Style.font.body
               }
             }
@@ -460,7 +461,7 @@ Item {
       visible: view.store && view.store.loaded && view.themeCount === 0
       anchors.centerIn: flick
       text: view.filterText ? "No theme matches “" + view.filterText + "”" : "No themes found"
-      color: Util.alpha(Color.foreground, 0.7)
+      color: Util.alpha(Commons.Color.foreground, 0.7)
       font.pixelSize: Style.font.heading
     }
 
@@ -491,7 +492,7 @@ Item {
           visible: view.selectedTheme !== null && view.selectedTheme.kind === "broken" && view.brokenCount > 1
           text: "Remove all " + view.brokenCount + " broken"
           bordered: true
-          foreground: Color.urgent
+          foreground: Commons.Color.urgent
           enabled: !(view.store && view.store.busy)
           onClicked: view.requestRemoveBroken()
         }
@@ -500,7 +501,7 @@ Item {
           visible: view.selectedAction !== null && !!view.selectedAction.verb
           text: view.selectedAction && view.selectedAction.button ? view.selectedAction.button : ""
           bordered: true
-          foreground: view.selectedAction && view.selectedAction.destructive ? Color.urgent : Color.foreground
+          foreground: view.selectedAction && view.selectedAction.destructive ? Commons.Color.urgent : Commons.Color.foreground
           enabled: !(view.store && view.store.busy)
           onClicked: view.requestAction()
         }
@@ -512,7 +513,7 @@ Item {
         anchors.horizontalCenter: parent.horizontalCenter
         width: parent.width - Style.space(560)
         text: view.selectedTheme ? view.selectedTheme.label : ""
-        color: Color.foreground
+        color: Commons.Color.foreground
         font.pixelSize: Style.font.display
         font.weight: Font.DemiBold
         horizontalAlignment: Text.AlignHCenter
@@ -527,7 +528,7 @@ Item {
         width: selectedName.width
         text: view.filterText ? "Filter: " + view.filterText
           : (view.selectedAction ? view.selectedAction.note : "")
-        color: Util.alpha(Color.foreground, 0.7)
+        color: Util.alpha(Commons.Color.foreground, 0.7)
         font.pixelSize: Style.font.body
         horizontalAlignment: Text.AlignHCenter
         elide: Text.ElideRight
@@ -542,8 +543,8 @@ Item {
         elide: Text.ElideRight
         font.pixelSize: Style.font.bodySmall
         color: view.store && view.store.message
-          ? (view.store.messageIsError ? Color.urgent : Color.accent)
-          : Util.alpha(Color.foreground, 0.6)
+          ? (view.store.messageIsError ? Commons.Color.urgent : Commons.Color.accent)
+          : Util.alpha(Commons.Color.foreground, 0.6)
         text: view.store && view.store.busy ? "Working…"
           : (view.store && view.store.message ? view.store.message
           : "←↑↓→ move  ·  type to filter"

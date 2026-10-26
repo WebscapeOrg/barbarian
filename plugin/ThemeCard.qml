@@ -1,5 +1,6 @@
 import QtQuick
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 
 // One theme: its preview, its name underneath, a badge when it is in use, your copy of an
@@ -32,9 +33,9 @@ Item {
   Rectangle {
     id: frame
     anchors.fill: parent
-    color: Color.background
+    color: Commons.Color.background
     border.width: card.selected ? 2 : 1
-    border.color: card.selected ? Color.accent : Util.alpha(Color.foreground, card.hovered ? 0.45 : 0.18)
+    border.color: card.selected ? Commons.Color.accent : Util.alpha(Commons.Color.foreground, card.hovered ? 0.45 : 0.18)
 
     Item {
       id: imageArea
@@ -65,7 +66,7 @@ Item {
         horizontalAlignment: Text.AlignHCenter
         wrapMode: Text.WordWrap
         text: card.theme.kind === "broken" ? "Link target is gone" : (preview.status === Image.Loading ? "" : "No preview")
-        color: Util.alpha(Color.foreground, 0.45)
+        color: Util.alpha(Commons.Color.foreground, 0.45)
         font.pixelSize: Style.font.body
       }
 
@@ -78,17 +79,17 @@ Item {
         anchors.rightMargin: removeMark.visible ? Style.space(14) + removeMark.width : Style.space(8)
         width: badgeText.implicitWidth + Style.space(12)
         height: badgeText.implicitHeight + Style.space(6)
-        color: card.theme.active ? Color.accent
-          : card.theme.kind === "broken" ? Color.urgent
-          : Util.alpha(Color.background, 0.85)
+        color: card.theme.active ? Commons.Color.accent
+          : card.theme.kind === "broken" ? Commons.Color.urgent
+          : Util.alpha(Commons.Color.background, 0.85)
         border.width: card.theme.active || card.theme.kind === "broken" ? 0 : 1
-        border.color: Util.alpha(Color.foreground, 0.4)
+        border.color: Util.alpha(Commons.Color.foreground, 0.4)
 
         Text {
           id: badgeText
           anchors.centerIn: parent
           text: card.badge
-          color: card.theme.active || card.theme.kind === "broken" ? Color.background : Color.foreground
+          color: card.theme.active || card.theme.kind === "broken" ? Commons.Color.background : Commons.Color.foreground
           font.family: Style.font.family
           font.pixelSize: Style.font.caption
           font.weight: Font.DemiBold
@@ -102,7 +103,7 @@ Item {
       anchors.bottom: parent.bottom
       anchors.margins: frame.border.width
       height: card.labelHeight - frame.border.width
-      color: Util.alpha(Color.foreground, 0.07)
+      color: Util.alpha(Commons.Color.foreground, 0.07)
 
       Text {
         anchors.fill: parent
@@ -112,7 +113,7 @@ Item {
         horizontalAlignment: Text.AlignHCenter
         elide: Text.ElideMiddle
         text: card.theme.label || ""
-        color: card.hidden ? Util.alpha(Color.foreground, 0.55) : Color.foreground
+        color: card.hidden ? Util.alpha(Commons.Color.foreground, 0.55) : Commons.Color.foreground
         font.pixelSize: Style.font.body
         font.weight: card.selected ? Font.DemiBold : Font.Normal
       }
