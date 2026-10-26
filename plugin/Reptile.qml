@@ -6,6 +6,7 @@ import Quickshell.Hyprland
 import Quickshell.Wayland
 import Quickshell.Widgets
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 
 // Reptile (re-tile — Dave's name, 2026-09-03, a pair with Barbarian): every desk's recording
@@ -38,9 +39,9 @@ Panel {
 
   readonly property string tool: "\"$HOME/.config/omarchy/workspace-layout/ws-layout\""
 
-  readonly property color foreground: bar ? bar.barForeground : Color.foreground
-  readonly property color accent: Color.accent
-  readonly property color muted: Color.muted
+  readonly property color foreground: bar ? bar.barForeground : Commons.Color.foreground
+  readonly property color accent: Commons.Color.accent
+  readonly property color muted: Commons.Color.muted
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
 
   // Material Design's coiled snake (nf-md-snake, U+F150E) — looked up in the Nerd Fonts glyph
@@ -358,8 +359,8 @@ Panel {
       anchors.horizontalCenter: parent.horizontalCenter
       anchors.bottom: parent.bottom
       anchors.bottomMargin: Style.space(67)
-      color: Util.alpha(Color.background, 0.97)
-      borderSpec: Border.surfaceSpec("popups", "border", Color.popups.border, Math.max(1, Style.space(2)))
+      color: Util.alpha(Commons.Color.background, 0.97)
+      borderSpec: Border.surfaceSpec("popups", "border", Commons.Color.popups.border, Math.max(1, Style.space(2)))
       radius: Style.cornerRadius
 
       Row {
@@ -380,7 +381,7 @@ Panel {
             text: root.iconHero
             textFormat: Text.PlainText
             font: layingIconMetrics.font
-            color: Color.popups.text
+            color: Commons.Color.popups.text
           }
         }
         Column {
@@ -393,7 +394,7 @@ Panel {
             text: root.layingMessage
             textFormat: Text.PlainText
             font: layingTextMetrics.font
-            color: Color.popups.text
+            color: Commons.Color.popups.text
             wrapMode: Text.WordWrap
             elide: Text.ElideRight
             maximumLineCount: 2
@@ -404,7 +405,7 @@ Panel {
             text: root.layingReason
             textFormat: Text.PlainText
             font: layingReasonMetrics.font
-            color: Color.popups.text
+            color: Commons.Color.popups.text
             wrapMode: Text.WordWrap
             elide: Text.ElideRight
             maximumLineCount: 3
@@ -522,11 +523,11 @@ Panel {
     readonly property bool hot: tileMouse.containsMouse || activeFocus
 
     radius: Style.cornerRadius
-    color: tileMouse.pressed ? Style.pressedFillFor(Color.foreground, root.accent)
-         : hot ? Style.hoverFillFor(Color.foreground, root.accent)
-         : Color.popups.background
+    color: tileMouse.pressed ? Style.pressedFillFor(Commons.Color.foreground, root.accent)
+         : hot ? Style.hoverFillFor(Commons.Color.foreground, root.accent)
+         : Commons.Color.popups.background
     border.width: activeFocus ? Math.max(2, Style.space(2)) : 1
-    border.color: activeFocus ? root.accent : Qt.rgba(Color.foreground.r, Color.foreground.g, Color.foreground.b, 0.3)
+    border.color: activeFocus ? root.accent : Qt.rgba(Commons.Color.foreground.r, Commons.Color.foreground.g, Commons.Color.foreground.b, 0.3)
     opacity: enabled ? 1 : 0.65
     activeFocusOnTab: true
     Accessible.role: Accessible.Button
@@ -544,7 +545,7 @@ Panel {
         anchors.horizontalCenter: parent.horizontalCenter
         text: tile.icon
         textFormat: Text.PlainText
-        color: Color.foreground
+        color: Commons.Color.foreground
         font.family: Style.font.family
         font.pixelSize: Style.font.displayLarge
       }
@@ -556,7 +557,7 @@ Panel {
         wrapMode: Text.WordWrap
         maximumLineCount: 2
         elide: Text.ElideRight
-        color: Color.foreground
+        color: Commons.Color.foreground
         font.family: Style.font.family
         font.bold: true
         font.pixelSize: Style.font.body
@@ -631,7 +632,7 @@ Panel {
           text: view.headline
           textFormat: Text.PlainText
           wrapMode: Text.WordWrap
-          color: Color.foreground
+          color: Commons.Color.foreground
           font.family: Style.font.family
           font.bold: true
           font.pixelSize: Style.font.title
@@ -641,7 +642,7 @@ Panel {
           text: view.reason
           textFormat: Text.PlainText
           wrapMode: Text.WordWrap
-          color: Color.foreground
+          color: Commons.Color.foreground
           font.family: Style.font.family
           font.pixelSize: Style.font.body
         }
@@ -675,7 +676,7 @@ Panel {
                                                  : (root.installedAppsError || "Loading installed apps…")
         placeholderText: "Search installed apps…"
         emptyText: "No matching apps"
-        foreground: Color.foreground
+        foreground: Commons.Color.foreground
         accent: root.accent
         fontFamily: Style.font.family
         Accessible.role: Accessible.ComboBox
@@ -689,7 +690,7 @@ Panel {
         text: view.note
         textFormat: Text.PlainText
         wrapMode: Text.WordWrap
-        color: Color.foreground
+        color: Commons.Color.foreground
         font.family: Style.font.family
         font.pixelSize: Style.font.body
       }
@@ -708,7 +709,7 @@ Panel {
       required property string name
       required property string actionsJson
       title: "Barbarian · missing " + klass + " · " + token + (recordedTitle ? " · " + recordedTitle : "")
-      color: Color.background
+      color: Commons.Color.background
       implicitWidth: 720
       implicitHeight: 540
       visible: true
@@ -740,7 +741,7 @@ Panel {
     anchors { top: true; left: true }
     implicitWidth: Style.space(1260)
     implicitHeight: Style.space(900)
-    color: Color.background
+    color: Commons.Color.background
     WlrLayershell.namespace: "reptile-placeholder-preview"
     WlrLayershell.layer: WlrLayer.Overlay
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
@@ -1440,7 +1441,7 @@ Panel {
             selected: qa.capturing
             focusable: true
             foreground: qa.draft.key && !qa.capturing ? qa.foreground : qa.muted
-            background: root.bar ? root.bar.background : Color.background
+            background: root.bar ? root.bar.background : Commons.Color.background
             accent: qa.accent
             fontFamily: qa.fontFamily
             fontSize: Style.font.caption
@@ -1459,7 +1460,7 @@ Panel {
             bordered: true
             focusable: true
             foreground: qa.muted
-            background: root.bar ? root.bar.background : Color.background
+            background: root.bar ? root.bar.background : Commons.Color.background
             accent: qa.accent
             fontFamily: qa.fontFamily
             fontSize: Style.font.caption
@@ -1484,7 +1485,7 @@ Panel {
             bordered: true
             focusable: true
             foreground: qa.muted
-            background: root.bar ? root.bar.background : Color.background
+            background: root.bar ? root.bar.background : Commons.Color.background
             accent: qa.accent
             fontFamily: qa.fontFamily
             fontSize: Style.font.body
@@ -1500,7 +1501,7 @@ Panel {
             focusable: true
             enabled: qa.chosen && qa.shortcutComplete && !qa.busy
             foreground: qa.foreground
-            background: root.bar ? root.bar.background : Color.background
+            background: root.bar ? root.bar.background : Commons.Color.background
             accent: qa.accent
             fontFamily: qa.fontFamily
             fontSize: Style.font.body
@@ -1525,7 +1526,7 @@ Panel {
               selected: qa.manualModifierSelected(modelData)
               focusable: true
               foreground: qa.foreground
-              background: root.bar ? root.bar.background : Color.background
+              background: root.bar ? root.bar.background : Commons.Color.background
               accent: qa.accent
               fontFamily: qa.fontFamily
               fontSize: Style.font.caption
@@ -1922,7 +1923,7 @@ Panel {
                 bordered: true
                 selected: modelData.ws === root.desk
                 foreground: root.isDirty(modelData.ws) ? root.accent : root.foreground
-                background: bar ? bar.background : Color.background
+                background: bar ? bar.background : Commons.Color.background
                 accent: root.accent
                 fontFamily: root.fontFamily
                 fontSize: Style.font.body
@@ -1949,7 +1950,7 @@ Panel {
               textFormat: Text.PlainText
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption
-              color: bar ? bar.urgent : Color.urgent
+              color: bar ? bar.urgent : Commons.Color.urgent
             }
           }
 
@@ -2092,7 +2093,7 @@ Panel {
                         text: "→ right"
                         bordered: true
                         foreground: root.foreground
-                        background: bar ? bar.background : Color.background
+                        background: bar ? bar.background : Commons.Color.background
                         accent: root.accent
                         fontFamily: root.fontFamily
                         fontSize: Style.font.caption
@@ -2102,7 +2103,7 @@ Panel {
                         text: "↓ below"
                         bordered: true
                         foreground: root.foreground
-                        background: bar ? bar.background : Color.background
+                        background: bar ? bar.background : Commons.Color.background
                         accent: root.accent
                         fontFamily: root.fontFamily
                         fontSize: Style.font.caption
@@ -2435,7 +2436,7 @@ Panel {
               text: root.adding ? "× cancel adding" : "+ add a window"
               bordered: true
               foreground: root.foreground
-              background: bar ? bar.background : Color.background
+              background: bar ? bar.background : Commons.Color.background
               accent: root.accent
               fontFamily: root.fontFamily
               fontSize: Style.font.body

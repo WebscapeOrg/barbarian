@@ -4,6 +4,7 @@ import Quickshell
 import Quickshell.Io
 import Quickshell.Widgets
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 import "." as Reordering
 
@@ -138,10 +139,10 @@ Panel {
   // This widget must never list (or reorder away) itself.
   readonly property string selfId: "atlas.arrange"
 
-  readonly property color foreground: bar ? bar.barForeground : Color.foreground
-  readonly property color accent: Color.accent
-  readonly property color muted: Color.muted
-  readonly property color urgent: bar ? bar.urgent : Color.urgent
+  readonly property color foreground: bar ? bar.barForeground : Commons.Color.foreground
+  readonly property color accent: Commons.Color.accent
+  readonly property color muted: Commons.Color.muted
+  readonly property color urgent: bar ? bar.urgent : Commons.Color.urgent
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
 
   readonly property string iconHero: "󰞇"
@@ -1806,7 +1807,7 @@ Panel {
 
     radius: Style.cornerRadius
     color: lifted
-      ? Qt.tint(Color.background, Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.18))
+      ? Qt.tint(Commons.Color.background, Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.18))
       : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, highlighted ? 0.10 : 0.04)
     border.width: lifted ? Math.max(1, Style.space(1)) : 0
     border.color: root.accent
@@ -2597,7 +2598,7 @@ Panel {
           width: deskDrag.previewWidth
           height: deskDrag.previewHeight
           radius: Style.cornerRadius
-          color: Qt.tint(Color.background, Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.18))
+          color: Qt.tint(Commons.Color.background, Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.18))
           border.width: Math.max(1, Style.space(1))
           border.color: root.accent
           Accessible.ignored: true
@@ -2750,7 +2751,7 @@ Panel {
             bordered: true
             selected: root.mode === "1"
             foreground: root.foreground
-            background: bar ? bar.background : Color.background
+            background: bar ? bar.background : Commons.Color.background
             accent: root.accent
             fontFamily: root.fontFamily
             fontSize: Style.font.body
@@ -2762,7 +2763,7 @@ Panel {
             bordered: true
             selected: root.mode === "2"
             foreground: root.foreground
-            background: bar ? bar.background : Color.background
+            background: bar ? bar.background : Commons.Color.background
             accent: root.accent
             fontFamily: root.fontFamily
             fontSize: Style.font.body
@@ -2774,7 +2775,7 @@ Panel {
             bordered: true
             selected: root.mode === "3"
             foreground: root.foreground
-            background: bar ? bar.background : Color.background
+            background: bar ? bar.background : Commons.Color.background
             accent: root.accent
             fontFamily: root.fontFamily
             fontSize: Style.font.body
@@ -3342,7 +3343,7 @@ Panel {
         }
 
         background: BorderSurface {
-          color: Color.popups.background
+          color: Commons.Color.popups.background
           borderSpec: Border.flat(Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.35), 1)
           radius: Style.cornerRadius
         }
