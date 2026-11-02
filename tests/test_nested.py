@@ -47,7 +47,7 @@ class NestedIsolationTests(unittest.TestCase):
     def assert_refused(self):
         for arguments in (("hypr", "reload"), ("ipc", "features"), ("key", "-k", "Escape"),
                           ("pointer", "move", "1", "1"), ("shot", str(self.runtime / "shot.png")),
-                          ("engine", "reptile-feature", "off", "hide_on_close"), ("stop",)):
+                          ("engine", "reptile-feature", "off", "columns"), ("stop",)):
             with self.subTest(arguments=arguments):
                 result = self.run_harness(*arguments)
                 self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)

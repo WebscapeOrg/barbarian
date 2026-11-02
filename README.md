@@ -126,7 +126,7 @@ no shell restart is needed. Saved recordings and quick-app choices are retained.
 The switches cover layout restoration, restoration at login and during automatic recovery,
 applying new edits when visiting a desk, reopening missing apps, closing extra windows,
 floating-window restoration, missing-window placeholders, layout messages, equal columns,
-quick apps and hiding quick apps on close. Disabling layout restoration also pauses its
+and quick apps. Disabling layout restoration also pauses its
 dependent features. Their individual choices are retained. Disabling quick apps brings hidden
 quick-app windows to the current desk before removing their shortcut overrides.
 
@@ -134,8 +134,13 @@ quick-app windows to the current desk before removing their shortcut overrides.
 **Space** changes the focused switch, and **Escape** closes the panel. Disabling apply-on-visit
 clears pending automatic applications; re-enabling it applies only edits made afterwards.
 
-Settings live in `~/.config/omarchy/workspace-layout/features.json`. A missing file preserves the
-existing behavior, including the old `hide_on_close` choice in `quick-apps.json`. Automatic
+Each app in **Quick apps** has its own **Hide with SUPER+W** switch. On hides that app and keeps
+it running; off closes it normally. The app's own shortcut still summons or hides it. Existing
+apps inherit their previous global choice; new apps start with hiding on. Choices are saved with
+the app in `quick-apps.json` and remain editable while Quick apps is paused in Features.
+
+Feature settings live in `~/.config/omarchy/workspace-layout/features.json`. A missing file preserves
+the existing behavior. Automatic
 callers use `ws-layout restore --automatic --quiet <desk>`; the panel uses `--on-visit` for new
 edits. `ws-layout features` reads the values, and `ws-layout features <name> true|false` changes
 one. The `reptile-feature status|on|off <name>` adapter supplies Caboodle's switch contract.

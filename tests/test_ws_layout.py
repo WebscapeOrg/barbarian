@@ -12,6 +12,7 @@ from importlib.machinery import SourceFileLoader
 import os
 import pathlib
 import sys
+import tempfile
 import unittest
 from unittest import mock
 
@@ -23,6 +24,17 @@ loader = SourceFileLoader("ws_layout", str(ENGINE))
 spec = importlib.util.spec_from_loader("ws_layout", loader)
 engine = importlib.util.module_from_spec(spec)
 loader.exec_module(engine)
+
+
+def setUpModule():
+    temporary = tempfile.TemporaryDirectory(prefix="barbarian-layout-identity-")
+    unittest.addModuleCleanup(temporary.cleanup)
+    directory = pathlib.Path(temporary.name)
+    for module, key, path in [(engine.features, "SETTINGS_FILE", directory / "features.json"),
+                              (engine, "QUICK_APPS_FILE", str(directory / "quick-apps.json"))]:
+        patcher = mock.patch.object(module, key, path)
+        patcher.start()
+        unittest.addModuleCleanup(patcher.stop)
 
 
 class Summons(unittest.TestCase):

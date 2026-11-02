@@ -219,7 +219,7 @@ class Install(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(saved.read_text(), '{"quick_apps":false}\n')
         manifests = list((self.home / ".config/caboodle/switches").glob("reptile-*.json"))
-        self.assertEqual(len(manifests), 11)
+        self.assertEqual(len(manifests), 10)
         self.assertTrue(os.access(self.home / ".local/bin/reptile-feature", os.X_OK))
         self.assertTrue((saved.parent / "reptile_features.py").exists())
 
