@@ -15,7 +15,6 @@ from pathlib import Path
 
 DIRECTORY = Path.home() / ".config/omarchy/workspace-layout"
 SETTINGS_FILE = DIRECTORY / "features.json"
-QUICK_APPS_FILE = DIRECTORY / "quick-apps.json"
 
 FEATURES = [
     {"key": "restore_layouts", "label": "Restore desk layouts", "group": "Desk layouts",
@@ -43,9 +42,6 @@ FEATURES = [
      "description": "Let HYPER+3 arrange the current windows side by side."},
     {"key": "quick_apps", "label": "Quick apps", "group": "Quick apps",
      "description": "Use app shortcuts and hide apps. Off brings hidden apps to this desk."},
-    {"key": "hide_on_close", "label": "Hide quick apps on close", "group": "Quick apps",
-     "requires": "quick_apps",
-     "description": "SUPER+W hides quick apps. Off closes them normally."},
 ]
 DEFAULTS = {feature["key"]: True for feature in FEATURES}
 _thread_lock = threading.RLock()
@@ -72,10 +68,6 @@ def read_object(path):
 def read():
     stored = read_object(SETTINGS_FILE)
     values = dict(DEFAULTS)
-    if "hide_on_close" not in stored:
-        legacy = read_object(QUICK_APPS_FILE).get("hide_on_close", True)
-        if isinstance(legacy, bool):
-            values["hide_on_close"] = legacy
     for key in DEFAULTS:
         if key not in stored:
             continue
@@ -172,7 +164,7 @@ def set_feature(key, value):
             return previous
         stored = read_object(SETTINGS_FILE)
         write({**stored, **previous, key: value})
-        if key in ("quick_apps", "hide_on_close"):
+        if key == "quick_apps":
             try:
                 sync_shortcuts(release_hidden=key == "quick_apps" and not value)
             except (SettingsError, OSError) as error:
@@ -214,6 +206,16 @@ def install_manifests(directory):
         if path.exists() and path.read_text() == body:
             continue
         atomic_write(path, body)
+    retired = directory / "reptile-hide-on-close.json"
+    if not retired.exists():
+        return
+    manifest = read_object(retired)
+    if manifest.get("owner") != "@barbarian" or manifest.get("id") != "reptile-hide-on-close":
+        raise SettingsError("The old global Quick apps switch belongs to another owner; it was kept.")
+    trash = Path.home() / ".local/share/Trash/files"
+    trash.mkdir(parents=True, exist_ok=True)
+    destination = Path(tempfile.mkdtemp(prefix="barbarian-switch-", dir=trash)) / retired.name
+    os.replace(retired, destination)
 
 
 def command(arguments):

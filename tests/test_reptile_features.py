@@ -43,7 +43,6 @@ class FeatureTest(unittest.TestCase):
         self.bindings = self.directory / "quick-apps.lua"
         for module, key, value in [
             (features, "SETTINGS_FILE", self.settings),
-            (features, "QUICK_APPS_FILE", self.apps),
             (quick, "LIST_FILE", str(self.apps)),
             (quick, "GEN_FILE", str(self.bindings)),
             (layout, "SNAP_DIR", str(self.directory)),
@@ -64,9 +63,9 @@ class FeatureTest(unittest.TestCase):
 
     def test_legacy_hide_choice_survives_first_unrelated_change(self):
         self.apps.write_text(json.dumps({"hide_on_close": False, "apps": [self.app]}))
-        self.assertFalse(features.enabled("hide_on_close"))
+        self.assertFalse(quick.read_list()["apps"][0]["hide_on_close"])
         features.set_feature("columns", False)
-        self.assertFalse(features.read()["hide_on_close"])
+        self.assertFalse(quick.read_list()["apps"][0]["hide_on_close"])
         self.assertEqual(json.loads(self.apps.read_text())["apps"], [self.app])
 
     def test_one_switch_preserves_all_others_and_unknown_future_settings(self):
@@ -130,13 +129,13 @@ class FeatureTest(unittest.TestCase):
         self.configure(quick_apps=False)
         quick.generate(reload=False)
         self.assertNotIn("o.bind(", self.bindings.read_text())
-        self.assertEqual(quick.read_list()["apps"], [self.app])
+        self.assertEqual(quick.read_list()["apps"], [{**self.app, "hide_on_close": True}])
         self.configure(quick_apps=True)
         quick.generate(reload=False)
         self.assertIn("Test app (quick app)", self.bindings.read_text())
         self.assertIn("SUPER + W", self.bindings.read_text())
 
-    def test_hide_on_close_off_keeps_app_shortcuts_but_restores_normal_close_binding(self):
+    def test_legacy_hide_on_close_off_keeps_app_shortcuts_but_restores_normal_close_binding(self):
         self.configure(hide_on_close=False)
         quick.generate(reload=False)
         generated = self.bindings.read_text()
@@ -157,6 +156,184 @@ class FeatureTest(unittest.TestCase):
             with mock.patch.object(quick, "hypr_eval") as execute:
                 quick.cmd_close_or_hide()
             execute.assert_called_once_with("hl.dispatch(hl.dsp.window.close())")
+
+    def test_per_app_choices_override_both_legacy_global_locations(self):
+        self.configure(hide_on_close=False)
+        other = {**self.app, "name": "other", "match": "other-app", "hide_on_close": True}
+        self.apps.write_text(json.dumps({"hide_on_close": True, "apps": [self.app, other]}))
+        choices = quick.read_list()
+        self.assertEqual([app["hide_on_close"] for app in choices["apps"]], [False, True])
+        self.assertNotIn("hide_on_close", choices)
+        self.assertNotIn("hide_on_close", features.read())
+        self.assertNotIn("hide_on_close", features.DEFAULTS)
+        self.assertNotIn("hide_on_close", json.loads(self.apps.read_text())["apps"][0])
+
+    def test_explicit_app_choices_no_longer_depend_on_legacy_globals(self):
+        self.configure(hide_on_close="damaged legacy choice")
+        self.apps.write_text(json.dumps({"hide_on_close": "damaged", "apps": [{**self.app, "hide_on_close": False}]}))
+        self.assertFalse(quick.read_list()["apps"][0]["hide_on_close"])
+        self.assertTrue(features.enabled("restore_layouts"))
+
+    def test_damaged_app_data_is_reported_without_disabling_unrelated_features(self):
+        for raw in ('{broken', '{"apps":{}}', '{"apps":[{"hide_on_close":"false"}]}'):
+            with self.subTest(raw=raw):
+                self.apps.write_text(raw)
+                self.assertTrue(features.enabled("restore_layouts"))
+                with self.assertRaises(features.SettingsError):
+                    quick.cmd_hide_on_close("test", "false")
+                self.assertEqual(self.apps.read_text(), raw)
+
+    def test_app_toggle_preserves_other_choices_and_metadata(self):
+        other = {**self.app, "name": "other", "match": "other-app", "hide_on_close": False}
+        self.apps.write_text(json.dumps({"future": "kept", "apps": [self.app, other]}))
+        with mock.patch.object(quick, "desktop_command"), contextlib.redirect_stdout(io.StringIO()) as output:
+            quick.cmd_hide_on_close("test", "false")
+        saved = json.loads(self.apps.read_text())
+        self.assertEqual(saved["future"], "kept")
+        self.assertEqual(saved["apps"][1], other)
+        self.assertFalse(saved["apps"][0]["hide_on_close"])
+        self.assertEqual(json.loads(output.getvalue()), {"name": "test", "hide_on_close": False})
+        self.assertNotIn("close-or-hide", self.bindings.read_text())
+        self.assertIn("Test app (quick app)", self.bindings.read_text())
+
+    def test_shortcut_edits_preserve_the_app_close_choice_and_new_apps_default_to_hide(self):
+        self.apps.write_text(json.dumps({"hide_on_close": False, "apps": [self.app]}))
+        updated = {**self.app, "key": "SUPER + period"}
+        new = {**self.app, "name": "new", "key": "SUPER + slash", "match": "new-app"}
+        with mock.patch.object(quick, "desktop_command"), mock.patch.object(quick, "live_binds", return_value={}):
+            quick.cmd_set(json.dumps(updated))
+            quick.cmd_set(json.dumps(new))
+        saved = json.loads(self.apps.read_text())
+        self.assertNotIn("hide_on_close", saved)
+        self.assertEqual([app["hide_on_close"] for app in saved["apps"]], [False, True])
+
+    def test_per_app_command_rejects_invalid_choices_and_missing_apps_without_writing(self):
+        original = self.apps.read_text()
+        for choice in ("1", "yes", "False", "", True):
+            with self.assertRaises(features.SettingsError):
+                quick.cmd_hide_on_close("test", choice)
+        with self.assertRaises(features.SettingsError):
+            quick.cmd_hide_on_close("missing", "true")
+        with self.assertRaises(SystemExit):
+            quick.cmd_set(json.dumps({**self.app, "hide_on_close": "false"}))
+        self.assertEqual(self.apps.read_text(), original)
+
+    def test_failed_per_app_binding_reload_restores_choices_and_generated_bindings(self):
+        self.apps.write_text(json.dumps({"hide_on_close": False, "apps": [self.app]}))
+        original = json.loads(self.apps.read_text())
+        quick.generate(reload=False)
+        old_bindings = self.bindings.read_text()
+        with mock.patch.object(quick, "desktop_command", side_effect=[features.SettingsError("reload failed"), None]):
+            with self.assertRaisesRegex(features.SettingsError, "previous choices were kept"):
+                quick.cmd_hide_on_close("test", "true")
+        self.assertEqual(json.loads(self.apps.read_text()), original)
+        self.assertEqual(self.bindings.read_text(), old_bindings)
+
+    def test_failed_per_app_binding_rollback_does_not_claim_success(self):
+        self.apps.write_text(json.dumps({"hide_on_close": False, "apps": [self.app]}))
+        with mock.patch.object(quick, "desktop_command", side_effect=features.SettingsError("desktop offline")):
+            with self.assertRaisesRegex(features.SettingsError, "shortcuts could not be restored"):
+                quick.cmd_hide_on_close("test", "true")
+        self.assertFalse(quick.read_list()["apps"][0]["hide_on_close"])
+
+    def test_per_app_choices_can_be_saved_while_quick_apps_is_paused(self):
+        self.configure(quick_apps=False)
+        with mock.patch.object(quick, "desktop_command"), contextlib.redirect_stdout(io.StringIO()):
+            quick.cmd_hide_on_close("test", "false")
+        self.assertFalse(quick.read_list()["apps"][0]["hide_on_close"])
+        self.assertNotIn("o.bind(", self.bindings.read_text())
+
+    def test_damaged_app_choices_can_be_disabled_and_cannot_be_reenabled_silently(self):
+        quick.generate(reload=False)
+        damaged = json.dumps({"apps": [{**self.app, "hide_on_close": "false"}]})
+        self.apps.write_text(damaged)
+        with mock.patch.object(features, "shortcut_engine", return_value=quick), \
+             mock.patch.object(quick, "hypr_eval") as reveal, \
+             mock.patch.object(quick, "desktop_command"):
+            features.set_feature("quick_apps", False)
+            self.assertFalse(features.enabled("quick_apps"))
+            self.assertNotIn("o.bind(", self.bindings.read_text())
+            reveal.assert_called_once()
+            with self.assertRaisesRegex(features.SettingsError, "previous choice was kept"):
+                features.set_feature("quick_apps", True)
+        self.assertFalse(features.enabled("quick_apps"))
+        self.assertEqual(self.apps.read_text(), damaged)
+        self.assertNotIn("o.bind(", self.bindings.read_text())
+
+    def test_only_the_first_or_last_hiding_choice_needs_to_change_close_bindings(self):
+        other = {**self.app, "name": "other", "match": "other-app", "hide_on_close": True}
+        self.apps.write_text(json.dumps({"apps": [{**self.app, "hide_on_close": True}, other]}))
+        quick.generate(reload=False)
+        with mock.patch.object(quick, "desktop_command") as desktop, contextlib.redirect_stdout(io.StringIO()):
+            quick.cmd_hide_on_close("test", "false")
+        desktop.assert_not_called()
+        self.assertIn("close-or-hide", self.bindings.read_text())
+        with mock.patch.object(quick, "desktop_command") as desktop, contextlib.redirect_stdout(io.StringIO()):
+            quick.cmd_hide_on_close("other", "false")
+        desktop.assert_called_once_with(["reload"])
+        self.assertNotIn("close-or-hide", self.bindings.read_text())
+
+    def run_close_lua(self, apps, klass, toggle=None):
+        self.apps.write_text(json.dumps({"apps": apps}))
+        with mock.patch.object(quick, "hypr_eval") as execute, mock.patch.object(quick, "mark_fired"):
+            if toggle:
+                quick.cmd_toggle(toggle)
+            else:
+                quick.cmd_close_or_hide()
+        active = '{class=' + quick.lua_str(klass) + ',address="0x1"}'
+        fixture = '''
+hl = {
+ get_active_window=function() return ACTIVE end,
+ get_windows=function() return {ACTIVE} end,
+ get_cursor_pos=function() return {x=3,y=4} end,
+ dispatch=function(command) print(command) end,
+ dsp={window={close=function() return "close" end,
+              move=function(args) return args.workspace end},
+      cursor={move=function() return "cursor" end}}
+}
+'''.replace('ACTIVE', active)
+        result = subprocess.run(['lua', '-'], input=fixture + execute.call_args.args[0],
+                                capture_output=True, text=True, timeout=5)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return result.stdout.splitlines()
+
+    def test_super_w_honors_each_app_and_the_most_specific_window_match(self):
+        broad = {**self.app, "hide_on_close": True}
+        narrow = {**self.app, "name": "narrow", "match": "test-app-special", "hide_on_close": False}
+        for apps, klass, expected in [
+            ([broad, narrow], 'test-app-main', ['special:quick-test', 'cursor']),
+            ([broad, narrow], 'test-app-special-page', ['close']),
+            ([narrow, broad], 'test-app-special-page', ['close']),
+            ([broad, narrow], 'ordinary-window', ['close']),
+            ([{**broad, 'hide_on_close': False}, {**narrow, 'hide_on_close': True}],
+             'test-app-special-page', ['special:quick-narrow', 'cursor']),
+        ]:
+            with self.subTest(klass=klass, apps=apps):
+                self.assertEqual(self.run_close_lua(apps, klass), expected)
+
+    def test_app_shortcut_still_hides_when_its_super_w_choice_is_off(self):
+        app = {**self.app, "hide_on_close": False}
+        self.assertEqual(self.run_close_lua([app], 'test-app-main', toggle='test'), ['special:quick-test', 'cursor'])
+
+    def test_old_global_manifest_is_retired_to_trash_but_other_owners_are_kept(self):
+        directory = self.directory / 'switches'
+        directory.mkdir()
+        retired = directory / 'reptile-hide-on-close.json'
+        original = json.dumps({'id': 'reptile-hide-on-close', 'owner': '@barbarian'})
+        retired.write_text(original)
+        with mock.patch.object(features.Path, 'home', return_value=self.directory):
+            features.install_manifests(directory)
+            features.install_manifests(directory)
+        self.assertFalse(retired.exists())
+        archived = list((self.directory / '.local/share/Trash/files').glob('barbarian-switch-*/reptile-hide-on-close.json'))
+        self.assertEqual(len(archived), 1)
+        self.assertEqual(archived[0].read_text(), original)
+        self.assertEqual(len(list(directory.glob('*.json'))), 10)
+        unowned = json.dumps({'id': 'reptile-hide-on-close', 'owner': '@someone-else'})
+        retired.write_text(unowned)
+        with self.assertRaises(features.SettingsError):
+            features.install_manifests(directory)
+        self.assertEqual(retired.read_text(), unowned)
 
     def test_reload_failure_is_not_reported_as_success(self):
         failed = subprocess.CompletedProcess([], 1, "", "offline")

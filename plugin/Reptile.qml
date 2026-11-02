@@ -940,7 +940,13 @@ Panel {
     readonly property string fontFamily: root.fontFamily
     readonly property color line: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.18)
 
-    property var model: ({ "apps": [], "hide_on_close": true, "reserved": "SUPER + W" })
+    property var model: ({ "apps": [], "reserved": "SUPER + W" })
+    property var closeChoices: ({})
+    property string closeSaving: ""
+    property string closeError: ""
+    property string closeErrorApp: ""
+    property bool listReloadPending: false
+    property bool closeFocusPending: false
     property var apps: []
     property string note: ""
     property string appsError: ""
@@ -986,6 +992,17 @@ Panel {
 
     function openAppPicker() { appPicker.open() }
 
+    function focusFirstControl() {
+      if (listProc.running) {
+        closeFocusPending = true
+        return
+      }
+      closeFocusPending = false
+      var first = quickRepeater.itemAt(0)
+      if (first) first.closeControl.forceActiveFocus()
+      else appPicker.open()
+    }
+
     Keys.onPressed: function (event) {
       if (event.key !== Qt.Key_Escape || appPicker.popupOpen || capturing) return
       root.close()
@@ -995,10 +1012,13 @@ Panel {
     function q(s) { return "'" + String(s).replace(/'/g, "'\\''") + "'" }
 
     function load() {
-      if (!listProc.running) {
-        listProc.command = ["sh", "-c", tool + " list"]
-        listProc.running = true
+      if (listProc.running || closeProc.running) {
+        listReloadPending = true
+        return
       }
+      listReloadPending = false
+      listProc.command = ["sh", "-c", tool + " list"]
+      listProc.running = true
       if (!appsProc.running) {
         appsLoading = true
         appsError = ""
@@ -1008,7 +1028,7 @@ Panel {
     }
 
     function run(args) {
-      if (busy) return
+      if (busy || listProc.running) return
       busy = true
       var cmd = tool
       for (var i = 0; i < args.length; i++) cmd += " " + q(args[i])
@@ -1068,6 +1088,17 @@ Panel {
     }
 
     function remove(name) { openMenu = ""; run(["remove", name]) }
+
+    function setHideOnClose(name, value) {
+      if (busy || listProc.running) return
+      closeError = ""
+      closeErrorApp = name
+      closeSaving = name
+      busy = true
+      closeProc.command = ["sh", "-c", tool + " hide-on-close " + q(name) + " "
+                           + (value ? "true" : "false")]
+      closeProc.running = true
+    }
 
     // ---- taking a shortcut -----------------------------------------------------------------------
 
@@ -1226,11 +1257,56 @@ Panel {
 
     Process {
       id: listProc
-      stdout: StdioCollector {
-        waitForEnd: true
-        onStreamFinished: {
-          try { qa.model = JSON.parse(text) } catch (e) { qa.note = "Could not read the app list." }
+      stdout: StdioCollector { id: listOut; waitForEnd: true }
+      stderr: StdioCollector { id: listErr; waitForEnd: true }
+      onExited: function(exitCode) {
+        if (exitCode === 0) {
+          try {
+            var data = JSON.parse(listOut.text)
+            if (!Array.isArray(data.apps)) throw new Error("invalid app list")
+            var choices = {}
+            var rows = []
+            for (var i = 0; i < data.apps.length; i++) {
+              if (typeof data.apps[i].hide_on_close !== "boolean") throw new Error("invalid close choice")
+              choices[data.apps[i].name] = data.apps[i].hide_on_close
+              var row = Object.assign({}, data.apps[i])
+              delete row.hide_on_close
+              rows.push(row)
+            }
+            if (JSON.stringify(rows) !== JSON.stringify(qa.model.apps))
+              qa.model = { "apps": rows, "reserved": data.reserved }
+            qa.closeChoices = choices
+          } catch (e) { qa.note = "Could not read the app list." }
+        } else {
+          qa.note = String(listErr.text || "Could not read the app list.").trim()
         }
+        if (qa.listReloadPending) Qt.callLater(qa.load)
+        if (qa.closeFocusPending && root.tab === 1) Qt.callLater(qa.focusFirstControl)
+      }
+    }
+
+    Process {
+      id: closeProc
+      stdout: StdioCollector { id: closeOut; waitForEnd: true }
+      stderr: StdioCollector { id: closeErr; waitForEnd: true }
+      onExited: function(exitCode) {
+        if (exitCode === 0) {
+          try {
+            var saved = JSON.parse(closeOut.text)
+            if (saved.name !== qa.closeSaving || typeof saved.hide_on_close !== "boolean")
+              throw new Error("invalid close choice")
+            var choices = Object.assign({}, qa.closeChoices)
+            choices[saved.name] = saved.hide_on_close
+            qa.closeChoices = choices
+          } catch (error) {
+            qa.closeError = "Could not confirm that choice. Reopen Quick apps to check it."
+          }
+        } else {
+          qa.closeError = String(closeErr.text || "Could not save that choice. Try again.").trim()
+        }
+        qa.closeSaving = ""
+        qa.busy = false
+        if (qa.listReloadPending) Qt.callLater(qa.load)
       }
     }
 
@@ -1294,9 +1370,11 @@ Panel {
     // ---- one card per app -------------------------------------------------------------------------
 
     Repeater {
+      id: quickRepeater
       model: qa.model.apps || []
 
       delegate: Rectangle {
+        property alias closeControl: closeToggle
         width: qa.width
         height: rowBody.implicitHeight + Style.space(20)
         radius: Style.space(8)
@@ -1404,6 +1482,46 @@ Panel {
                 onClicked: qa.openMenu = (qa.openMenu === modelData.name ? "" : modelData.name)
               }
             }
+          }
+
+          Toggle {
+            id: closeToggle
+            width: parent.width
+            label: "Hide with SUPER+W"
+            description: qa.closeSaving === modelData.name ? "Saving…"
+              : !root.featuresReady ? "Quick apps status is unavailable. Your choice is kept."
+              : !root.featureEnabled("quick_apps") ? "Paused while Quick apps is off in Features."
+              : "Off closes this app normally."
+            checked: qa.closeChoices[modelData.name] === true
+            enabled: !qa.busy && !listProc.running
+            opacity: enabled ? 1 : 0.65
+            foreground: root.featureForeground
+            accent: qa.accent
+            fontFamily: qa.fontFamily
+            titleSize: Style.font.body
+            Accessible.role: Accessible.CheckBox
+            Accessible.name: modelData.label + ": " + label
+            Accessible.description: description
+            Accessible.checkable: true
+            Accessible.checked: checked
+            Accessible.onToggleAction: if (enabled) clicked()
+            onClicked: {
+              forceActiveFocus()
+              qa.setHideOnClose(modelData.name, !checked)
+            }
+          }
+
+          Text {
+            visible: qa.closeError !== "" && qa.closeErrorApp === modelData.name
+            width: parent.width
+            text: qa.closeError
+            textFormat: Text.PlainText
+            wrapMode: Text.WordWrap
+            color: qa.foreground
+            font.family: qa.fontFamily
+            font.pixelSize: Style.font.body
+            Accessible.role: Accessible.AlertMessage
+            Accessible.name: text
           }
 
           Row {
@@ -1627,7 +1745,7 @@ Panel {
             text: qa.busy ? "Saving…" : "Save app"
             selected: true
             focusable: true
-            enabled: qa.chosen && qa.shortcutComplete && !qa.busy
+            enabled: qa.chosen && qa.shortcutComplete && !qa.busy && !listProc.running
             foreground: qa.foreground
             background: root.bar ? root.bar.background : Commons.Color.background
             accent: qa.accent
@@ -1692,41 +1810,6 @@ Panel {
       }
     }
 
-    // ---- the footer -------------------------------------------------------------------------------
-
-    Toggle {
-      width: qa.width
-      label: "Hide quick apps on close"
-      description: root.featureEnabled("quick_apps")
-        ? "SUPER+W hides quick apps. Off closes them normally."
-        : "Quick apps is off in Features. Your app choices are kept."
-      checked: root.featureEnabled("hide_on_close")
-      enabled: root.featuresReady && root.featureEnabled("quick_apps")
-      opacity: enabled ? 1 : 0.65
-      foreground: root.featureForeground
-      accent: qa.accent
-      fontFamily: qa.fontFamily
-      titleSize: Style.font.body
-      Accessible.role: Accessible.CheckBox
-      Accessible.name: label
-      Accessible.description: description
-      Accessible.checkable: true
-      Accessible.checked: checked
-      Accessible.onToggleAction: if (enabled) clicked()
-      onClicked: root.setFeature("hide_on_close", !checked)
-    }
-    Text {
-      visible: root.featureSaveError !== "" || root.featureBusy === "hide_on_close"
-      width: qa.width
-      text: root.featureSaveError || "Saving the close behavior…"
-      textFormat: Text.PlainText
-      wrapMode: Text.WordWrap
-      color: qa.foreground
-      font.family: qa.fontFamily
-      font.pixelSize: Style.font.body
-      Accessible.role: root.featureSaveError ? Accessible.AlertMessage : Accessible.StaticText
-      Accessible.name: text
-    }
   }
 
   component PickRow: Item {
@@ -1817,6 +1900,10 @@ Panel {
         else root.close()
       }
       onTabRequested: {
+        if (root.tab === 1) {
+          quickApps.focusFirstControl()
+          return
+        }
         root.tab = 1
         root.quickAppsLoad()
         Qt.callLater(function () { quickApps.openAppPicker() })
