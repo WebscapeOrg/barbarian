@@ -16,6 +16,10 @@ record which windows a workspace holds and how they are arranged, and put it bac
     ws-layout fill <token> <launch> <match> <name>
                               open an app in a placeholder's place (the placeholder's buttons)
     ws-layout forget <token>  take a placeholder's window out of its desk's recording, and close it
+    ws-layout features [name true|false]
+                              read or change the independent Reptile feature switches
+    ws-layout restore --automatic [ws]
+                              restore only when automatic restoration is enabled
 
 All default to the workspace Dave is on. Bound to HYPER+S, HYPER+R and HYPER+3 (see bindings.lua).
 ⚠️ SAVE MOVED FROM N TO S ON 2026-08-11; HYPER+N is deliberately left unbound so old muscle memory
@@ -55,6 +59,7 @@ import subprocess
 import sys
 import time
 from collections import Counter
+import reptile_features as features
 
 HOME = os.path.expanduser("~")
 # WS_LAYOUT_SNAPS points the tool at another recordings directory — for tests, never for real use.
@@ -364,6 +369,8 @@ ANNOUNCE = True
 
 
 def card(message, reason=None):
+    if not features.enabled("layout_messages"):
+        return
     # The headline goes up on its own first, so a panel older than `explain` still shows it —
     # Quickshell keeps running the panel it compiled until the shell restarts, and the other
     # machines get this engine by ship-sync with nobody there to restart it.
@@ -373,7 +380,8 @@ def card(message, reason=None):
 
 
 def card_down():
-    reptile_ipc("laid")
+    if features.enabled("layout_messages"):
+        reptile_ipc("laid")
 
 
 def reptile_ipc(*args):
@@ -609,11 +617,12 @@ def match_floats(floats, live):
 def restore_floats(ws, floats, say):
     """Open the recorded floating windows that are missing, and put every one of them back where
     it was recorded. Returns (opened, unopenable, moved)."""
-    if not floats:
+    if not floats or not features.enabled("floating_windows"):
         return [], [], 0
     g = desk_geometry()
     found = match_floats(floats, floating_on(ws))
-    missing = [i for i in range(len(floats)) if i not in found]
+    missing = [i for i in range(len(floats)) if i not in found
+               and can_reopen(floats[i], ws)]
     opened, unopenable = [], []
     if missing:
         say()
@@ -765,6 +774,9 @@ def close_extras(ws, need):
     is the one kept. The buckets and the counts are by summons identity where there is one —
     Quickshell plugin windows share a class, and a cull by class alone could keep the wrong
     plugin's window and close the recorded one."""
+    if not features.enabled("close_extras"):
+        return 0
+    restore_floating = features.enabled("floating_windows")
     have = {}
     for c in on_ws(ws):
         have.setdefault(summons_title(c) or c["class"], []).append(c)
@@ -776,6 +788,8 @@ def close_extras(ws, need):
                    + [c for c in windows if c["floating"] and not c.get("placeholder")]
                    + [c for c in windows if not c["floating"] and not c.get("placeholder")])
         for c in windows[: max(0, len(windows) - need.get(klass, 0))]:
+            if c["floating"] and not restore_floating:
+                continue
             dispatch(f'hl.dsp.window.close({{ window = "address:{c["address"]}" }})')
             closing.append(c["address"])
     if closing:
@@ -895,6 +909,8 @@ def open_window(klass, cmd, ws, floating=False):
     """Launch, then wait for the window it produces. Returns the client, or None on timeout.
     A Quickshell summon is matched by title as well as class: the class alone is the whole
     shell's, so any other Quickshell client appearing in the same moment would do."""
+    if not features.enabled("open_apps"):
+        return None
     title = None
     if klass == PLACEHOLDER_CLASS:
         title = next((p for p in SUMMONS if cmd == SUMMONS[p]), None)
@@ -912,6 +928,8 @@ def open_placeholder(ws, win, floating=False):
     window — floating, for a window the recording holds as floating, so the caller can put it at
     its rectangle. None when no placeholder came — a panel older than placeholders, or none
     running."""
+    if not features.enabled("placeholders"):
+        return None
     klass = win["class"]
     token = secrets.token_hex(3)
     offer = win.get("offer")
@@ -1160,7 +1178,29 @@ def stand_on(ws):
         wait_until(lambda: active_ws() == ws, 2.0)
 
 
-def restore(ws):
+def read_record(path):
+    try:
+        with open(path) as stream:
+            return json.load(stream)
+    except FileNotFoundError:
+        return None
+
+
+def can_reopen(win, ws):
+    launch = launcher_for_win(win, ws) or win.get("launch")
+    return features.enabled("open_apps" if launch else "placeholders")
+
+
+def restore(ws, automatic=False, on_visit=False):
+    if not features.enabled("restore_layouts"):
+        print("Layout restoration is off in Reptile → Features.")
+        return 0
+    if automatic and not features.enabled("automatic_restore"):
+        print("Automatic restoration is off in Reptile → Features.")
+        return 0
+    if on_visit and not features.enabled("apply_on_visit"):
+        print("Applying edits on desk visits is off in Reptile → Features.")
+        return 0
     path = snap_path(ws)
     if not os.path.exists(path):
         print(f"ws{ws}: no recording yet — press HYPER+S to make one")
@@ -1168,7 +1208,7 @@ def restore(ws):
             card(f"Barbarian has no recording of workspace {ws}")
             card_down()
         return 1
-    record = json.load(open(path))
+    record = read_record(path)
     name = record.get("name", ws)
     desk = desk_words(ws, name)
 
@@ -1204,6 +1244,13 @@ def _restore(ws, name, steps, floats, desk, say):
     closed = close_extras(ws, need)
     if closed:
         say()
+
+    present = assign(steps, tiled_on(ws))
+    kept = {id(s["win"]) for i, s in enumerate(steps)
+            if i in present or can_reopen(s["win"], ws)}
+    if len(kept) != len(steps):
+        tree = prune(tree_from_steps(steps), lambda win: id(win) in kept)
+        steps = steps_from_tree(tree) if tree else []
 
     if not steps:
         opened, unopenable, moved = restore_floats(ws, floats, say)
@@ -1342,7 +1389,7 @@ def forget(token):
         return 1
     ws = stand_in["workspace"]["id"]
     path = snap_path(ws)
-    record = json.load(open(path)) if os.path.exists(path) else None
+    record = read_record(path)
     if record is None:
         close_window(stand_in["address"])
         return 0
@@ -1433,7 +1480,7 @@ def show(ws):
     if not os.path.exists(path):
         print(f"ws{ws}: no recording")
         return 1
-    record = json.load(open(path))
+    record = read_record(path)
     steps = steps_of(record)
     fmt = record.get("format", 1)
     print(f"ws{ws} ({record.get('name', ws)}): {len(steps)} windows, opened in this order"
@@ -1585,6 +1632,9 @@ def usable_area():
 
 def columns(ws, want=None):
     """Side by side, equal shares — Dave's HYPER+3 for a desk of three."""
+    if not features.enabled("columns"):
+        print("Equal columns is off in Reptile → Features.")
+        return 0
     wins = by_position(tiled_on(ws))
     if not wins:
         print(f"ws{ws}: nothing tiled here")
@@ -1745,7 +1795,7 @@ def unit_layout(tree, g):
 
 def desk_model(ws, name, all_clients, g):
     path = snap_path(ws)
-    record = json.load(open(path)) if os.path.exists(path) else None
+    record = read_record(path)
     steps = steps_of(record) if record else []
     tree = tree_from_steps(steps)
     if tree:
@@ -1802,7 +1852,7 @@ def desks_json():
     for f in os.listdir(SNAP_DIR) if os.path.isdir(SNAP_DIR) else []:
         m = re.match(r"ws(\d+)\.json$", f)
         if m and int(m.group(1)) not in names:
-            names[int(m.group(1))] = json.load(open(os.path.join(SNAP_DIR, f))).get("name", m.group(1))
+            names[int(m.group(1))] = (read_record(os.path.join(SNAP_DIR, f)) or {}).get("name", m.group(1))
     apps = [{"class": k, "label": label_for(k)} for k in APP_ORDER]
     return {
         "active": active_ws(),
@@ -1818,7 +1868,7 @@ def desks_json():
 def edit(ws, op, args):
     """One change to a desk's recording, then the whole model again for the panel to redraw."""
     path = snap_path(ws)
-    record = json.load(open(path)) if os.path.exists(path) else None
+    record = read_record(path)
     name = record.get("name") if record else ws_name(ws)
     floats = (record or {}).get("floating") or []
     steps = steps_of(record) if record else []
@@ -1874,6 +1924,11 @@ def _leaf_nodes(node):
 
 def main():
     global ANNOUNCE
+    if len(sys.argv) >= 2 and sys.argv[1] == "features":
+        return features.command(sys.argv[2:])
+    automatic = "--automatic" in sys.argv
+    on_visit = "--on-visit" in sys.argv
+    sys.argv = [a for a in sys.argv if a not in ("--automatic", "--on-visit")]
     if "--quiet" in sys.argv:
         ANNOUNCE = False
         sys.argv = [a for a in sys.argv if a != "--quiet"]
@@ -1899,7 +1954,9 @@ def main():
         want = int(sys.argv[2]) if len(sys.argv) > 2 else None
         return columns(active_ws(), want)
     ws = int(sys.argv[2]) if len(sys.argv) > 2 else active_ws()
-    return {"snapshot": take_snapshot, "restore": restore, "show": show}[sys.argv[1]](ws)
+    if sys.argv[1] == "restore":
+        return restore(ws, automatic=automatic, on_visit=on_visit)
+    return {"snapshot": take_snapshot, "show": show}[sys.argv[1]](ws)
 
 
 if __name__ == "__main__":

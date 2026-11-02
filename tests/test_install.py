@@ -211,6 +211,28 @@ class Install(unittest.TestCase):
         self.assertFalse(self.called("quickshell"))
         self.assertNotIn("restart", result.stdout)
 
+    def test_feature_switches_are_installed_without_changing_saved_choices(self):
+        saved = self.home / ".config/omarchy/workspace-layout/features.json"
+        saved.parent.mkdir(parents=True)
+        saved.write_text('{"quick_apps":false}\n')
+        result = self.run_install()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(saved.read_text(), '{"quick_apps":false}\n')
+        manifests = list((self.home / ".config/caboodle/switches").glob("reptile-*.json"))
+        self.assertEqual(len(manifests), 11)
+        self.assertTrue(os.access(self.home / ".local/bin/reptile-feature", os.X_OK))
+        self.assertTrue((saved.parent / "reptile_features.py").exists())
+
+    def test_switch_install_failure_is_reported_after_restarting_the_shell(self):
+        conflict = self.home / ".config/caboodle/switches"
+        conflict.parent.mkdir(parents=True)
+        conflict.write_text("existing file")
+        result = self.run_install()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("switches could not be installed", result.stderr)
+        self.assertTrue(self.called("omarchy-restart-shell"))
+        self.assertEqual(conflict.read_text(), "existing file")
+
     def test_a_refused_restart_is_owed_rather_than_forgotten(self):
         self.stub("omarchy-restart-shell", "exit 1")     # what it does while the session is locked
         self.run_install()
@@ -220,12 +242,12 @@ class Install(unittest.TestCase):
 
     def test_a_panel_file_in_before_the_screen_went_up_is_still_owed_its_restart(self):
         """The panel opens part way through: what went in first must not be left uncompiled."""
-        self.stub("hyprctl", 'n=$(cat "$COUNT" 2>/dev/null || echo 0); n=$((n + 1)); echo "$n" > "$COUNT"\n'
-                             'if [ "$n" -gt 4 ]; then echo \'[{"namespace": "omarchy-keyboard-panel"}]\'; '
+        self.stub("hyprctl", 'if [ -f "$HOME/.config/omarchy/plugins/atlas.arrange/Panel.qml" ]; '
+                             'then echo \'[{"namespace": "omarchy-keyboard-panel"}]\'; '
                              'else echo "[]"; fi')
         result = self.run_install()
         stamp = self.home / ".local/state/omarchy/barbarian-restart-owed"
-        self.assertIn("Panel.qml", self.installed())         # the first four files went in
+        self.assertIn("Panel.qml", self.installed())
         self.assertNotIn("ws-renumber", self.installed())    # the rest are waiting
         self.assertTrue(stamp.exists(), result.stdout)
         self.assertTrue(self.called("systemd-run"))
