@@ -117,6 +117,29 @@ a theme some other way, or after an Omarchy update, can still show a hidden them
 `plugin/bin/theme-remover` does every change on disk, and its header explains the two caches it
 keeps in line.
 
+## Reptile features
+
+Open **HYPER+L → Features**, or use the **Reptile** switches in Caboodle, to turn behaviors
+on and off independently. Both controls share the same settings. Changes are saved immediately;
+no shell restart is needed. Saved recordings and quick-app choices are retained.
+
+The switches cover layout restoration, restoration at login and during automatic recovery,
+applying new edits when visiting a desk, reopening missing apps, closing extra windows,
+floating-window restoration, missing-window placeholders, layout messages, equal columns,
+quick apps and hiding quick apps on close. Disabling layout restoration also pauses its
+dependent features. Their individual choices are retained. Disabling quick apps brings hidden
+quick-app windows to the current desk before removing their shortcut overrides.
+
+**Ctrl+Tab** and **Ctrl+Shift+Tab** change tabs. In Features, **Tab** moves between switches,
+**Space** changes the focused switch, and **Escape** closes the panel. Disabling apply-on-visit
+clears pending automatic applications; re-enabling it applies only edits made afterwards.
+
+Settings live in `~/.config/omarchy/workspace-layout/features.json`. A missing file preserves the
+existing behavior, including the old `hide_on_close` choice in `quick-apps.json`. Automatic
+callers use `ws-layout restore --automatic --quiet <desk>`; the panel uses `--on-visit` for new
+edits. `ws-layout features` reads the values, and `ws-layout features <name> true|false` changes
+one. The `reptile-feature status|on|off <name>` adapter supplies Caboodle's switch contract.
+
 ## What's inside
 
 - **`plugin/`** — the Quickshell bar widget (`atlas.arrange`) and, as the same plugin's
@@ -157,7 +180,7 @@ keeps in line.
 ## Install
 
 ```sh
-git clone https://github.com/dreinecke/barbarian
+git clone https://github.com/WebscapeOrg/barbarian
 cd barbarian && ./install.sh
 ```
 

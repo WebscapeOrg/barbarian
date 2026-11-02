@@ -161,7 +161,7 @@ finally:
     os.unlink(cache.name)
 PY
 }
-for engine in ws-layout quick-app; do
+for engine in ws-layout quick-app reptile_features.py reptile-feature; do
   if ! compiles "$HERE/engine/$engine"; then
     echo "barbarian: engine/$engine does not compile — nothing installed"
     exit 1
@@ -189,6 +189,8 @@ install_plugin_file() { # <mode> <repo file> <live file>
 # the list: it names ThemeRemover.qml as the overlay, and a manifest that arrives before the
 # file it names leaves the shell with an overlay that fails to load.
 FILES=(
+  "m644|$HERE/engine/reptile_features.py|$LAYOUT_DST/reptile_features.py"
+  "m755|$HERE/engine/reptile-feature|$HOME/.local/bin/reptile-feature"
   "m644|$HERE/plugin/ReorderController.qml|$PLUGIN_DIR/ReorderController.qml"
   "m644|$HERE/plugin/ReorderRow.qml|$PLUGIN_DIR/ReorderRow.qml"
   "m644|$HERE/plugin/Panel.qml|$PLUGIN_DIR/Panel.qml"
@@ -255,6 +257,11 @@ for f in "${FILES[@]}"; do
   rest="${f#*|}"; src="${rest%%|*}"; dest="${f##*|}"
   install_plugin_file "${f%%|*}" "$src" "$dest"
 done
+
+SWITCHES_FAILED=0
+if [ "$DEFERRED" = 0 ]; then
+  python3 "$HERE/engine/reptile-feature" install-manifests "$HOME/.config/caboodle/switches" || SWITCHES_FAILED=1
+fi
 
 # The engine is normally started by a user service or a theme-set hook on the host
 # machine; it is safe to install everywhere and started where the wiring exists.
@@ -440,4 +447,9 @@ fi
 # sync, same as the machine repo's own hook.
 if [ -d "$HERE/.git" ]; then
   install -Dm755 "$HERE/hooks/post-commit" "$HERE/.git/hooks/post-commit"
+fi
+
+if [ "$SWITCHES_FAILED" = 1 ]; then
+  echo "barbarian: Caboodle switches could not be installed; the native Features tab is available. Fix the reported path and run the installer again." >&2
+  exit 1
 fi

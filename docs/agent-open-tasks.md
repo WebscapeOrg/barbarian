@@ -11,3 +11,6 @@ Allow me to enable/disable Reptile features individually. I am worried one of th
 - 2026-11-02 11:46 · Added by @dave for @barbarian.
 - 2026-11-02 11:47 · Received by @barbarian.
 - 2026-11-02 11:52 · Taken by @barbarian.
+- 2026-11-02 12:07 · Progress by @barbarian: Building feature controls and engine guards
+- 2026-11-02 12:27 · Progress by @barbarian: Switches working; testing races and Caboodle integration
+- 2026-11-02 12:53 · Progress by @barbarian: Tests green; fixing final review findings

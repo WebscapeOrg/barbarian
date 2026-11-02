@@ -18,6 +18,7 @@ from unittest import mock
 sys.dont_write_bytecode = True   # the loader would otherwise cache a .pyc beside the engine
 
 ENGINE = pathlib.Path(__file__).resolve().parent.parent / "engine/ws-layout"
+sys.path.insert(0, str(ENGINE.parent))
 loader = SourceFileLoader("ws_layout", str(ENGINE))
 spec = importlib.util.spec_from_loader("ws_layout", loader)
 engine = importlib.util.module_from_spec(spec)

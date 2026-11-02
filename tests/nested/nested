@@ -29,9 +29,19 @@ SIG_FILE="$WORK/sig"
 TEST_HOME="$WORK/home"
 LAYOUT_W=2880 LAYOUT_H=1400   # BARBTEST at 0,0 plus WAYLAND-1 at 1600,0
 
-nested_sig() { cat "$SIG_FILE" 2>/dev/null || { echo "nested: not started" >&2; exit 1; }; }
 nested_env() {
-  export HYPRLAND_INSTANCE_SIGNATURE="$(nested_sig)" WAYLAND_DISPLAY="$(cat "$WORK/display")"
+  local sig display
+  sig="$(cat "$SIG_FILE" 2>/dev/null)" && display="$(cat "$WORK/display" 2>/dev/null)" || {
+    echo "nested: not started; no command was sent" >&2
+    return 1
+  }
+  if [[ ! "$sig" =~ ^[[:alnum:]_]+$ || ! "$display" =~ ^wayland-[0-9]+$ ]] ||
+     [ "$sig" = "${HYPRLAND_INSTANCE_SIGNATURE:-}" ] || [ "$display" = "${WAYLAND_DISPLAY:-}" ] ||
+     [ ! -S "$XDG_RUNTIME_DIR/hypr/$sig/.socket.sock" ] || [ ! -S "$XDG_RUNTIME_DIR/$display" ]; then
+    echo "nested: no valid isolated session; no command was sent" >&2
+    return 1
+  fi
+  export HYPRLAND_INSTANCE_SIGNATURE="$sig" WAYLAND_DISPLAY="$display"
 }
 
 case "${1:-}" in
@@ -76,8 +86,8 @@ case "${1:-}" in
     ln -sfn /usr/share/omarchy/shell/Commons "$WORK/config/Commons"
     ln -sfn /usr/share/omarchy/shell/Ui "$WORK/config/Ui"
     ln -sfn "$PLUGIN" "$WORK/config/barbarian"
-    cp "$HERE/shell.qml" "$WORK/config/shell.qml"
-    HOME="$TEST_HOME" setsid qs -p "$WORK/config/shell.qml" > "$WORK/panel.log" 2>&1 &
+    cp "$HERE/${2:-shell}.qml" "$WORK/config/shell.qml"
+    HOME="$TEST_HOME" QT_LINUX_ACCESSIBILITY_ALWAYS_ON=1 setsid qs -p "$WORK/config/shell.qml" > "$WORK/panel.log" 2>&1 &
     sleep 3
     echo "nested: panel running, log $WORK/panel.log"
     ;;
@@ -91,6 +101,7 @@ case "${1:-}" in
     ;;
   pointer)
     nested_env; shift
+    read -r LAYOUT_W LAYOUT_H < <(hyprctl monitors -j | jq -r '. as $m | [($m | map(.x + .width / .scale) | max | ceil), ($m | map(.y + .height / .scale) | max | ceil)] | @tsv')
     exec python3 "$HERE/vptr.py" "$LAYOUT_W" "$LAYOUT_H" "$@"
     ;;
   shot)
@@ -105,15 +116,30 @@ case "${1:-}" in
     nested_env; shift
     HOME="$TEST_HOME" WS_RENUMBER_HOOKS="$TEST_HOME/.config/omarchy/hooks" exec "$PLUGIN/bin/ws-renumber" "$@"
     ;;
+  engine)
+    nested_env; shift
+    case "${1:-}" in ws-layout|quick-app|reptile-feature) ;; *) exit 2 ;; esac
+    tool="$1"; shift
+    HOME="$TEST_HOME" exec "$HERE/../../engine/$tool" "$@"
+    ;;
   stop)
+    nested_env
+    sig="$HYPRLAND_INSTANCE_SIGNATURE"
     pid="$(qs list --all 2>/dev/null | awk -v cfg="$WORK/config/shell.qml" '/Process ID:/{p=$3} $0 ~ "Config path: " cfg {print p}')"
-    [ -n "$pid" ] && kill "$pid"
-    if sig="$(cat "$SIG_FILE" 2>/dev/null)"; then
-      HYPRLAND_INSTANCE_SIGNATURE="$sig" hyprctl dispatch 'hl.dsp.exit()' >/dev/null 2>&1 || true
-      sleep 1.5
-      [ "$sig" != "${HYPRLAND_INSTANCE_SIGNATURE:-}" ] && rm -rf "${XDG_RUNTIME_DIR:?}/hypr/$sig"
+    if [ -n "$pid" ]; then
+      [[ "$pid" =~ ^[0-9]+$ ]] || { echo "nested: ambiguous panel process; stopped" >&2; exit 1; }
+      kill -- "$pid"
     fi
-    rm -rf "$WORK"
+    hyprctl dispatch 'hl.dsp.exit()' >/dev/null
+    sleep 1.5
+    [ ! -S "$XDG_RUNTIME_DIR/hypr/$sig/.socket.sock" ] || {
+      echo "nested: compositor is still running; kept its files" >&2
+      exit 1
+    }
+    mkdir -p "$HOME/.local/share/Trash/files"
+    trash="$(mktemp -d "$HOME/.local/share/Trash/files/barbarian-nested-XXXXXX")"
+    [ ! -d "$XDG_RUNTIME_DIR/hypr/$sig" ] || mv -- "$XDG_RUNTIME_DIR/hypr/$sig" "$trash/hypr"
+    mv -- "$WORK" "$trash/work"
     ;;
   *)
     sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'

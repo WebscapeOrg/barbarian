@@ -43,6 +43,8 @@ Panel {
   readonly property color accent: Commons.Color.accent
   readonly property color muted: Commons.Color.muted
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
+  readonly property color featureForeground: Commons.Color.background.hslLightness < 0.5
+    ? Qt.lighter(root.foreground, 1.12) : root.foreground
 
   // Material Design's coiled snake (nf-md-snake, U+F150E) — looked up in the Nerd Fonts glyph
   // list, not guessed: the first guess at a codepoint drew a sliced circle (2026-09-03).
@@ -83,8 +85,95 @@ Panel {
   property var adding: null
   property int addAnchor: -1
   property bool busy: false
-  // Which tab is showing: 0 the desks, 1 the quick apps.
+  // Which tab is showing: 0 the desks, 1 the quick apps, 2 the features.
   property int tab: 0
+  property var featureValues: ({})
+  property var featureCatalog: []
+  property bool featuresReady: false
+  property string featureBusy: ""
+  property string featureLoadError: ""
+  property string featureSaveError: ""
+  property bool featureReloadPending: false
+
+  function featureEnabled(key) { return featuresReady && featureValues[key] === true }
+  function featureLabel(key) {
+    for (var i = 0; i < featureCatalog.length; i++)
+      if (featureCatalog[i].key === key) return featureCatalog[i].label
+    return key
+  }
+  function takeFeatures(text) {
+    try {
+      var state = JSON.parse(text)
+      if (!state.values || !Array.isArray(state.features)) throw new Error("invalid settings")
+      if (!featureCatalog.length) featureCatalog = state.features
+      featureValues = state.values
+      featuresReady = true
+      featureLoadError = ""
+      if (!featureEnabled("restore_layouts") || !featureEnabled("apply_on_visit")) dirtyList = []
+      if (!featureEnabled("layout_messages")) {
+        layingOpen = false
+        layingGuard.stop()
+        layingHold.stop()
+      }
+      if (!featureEnabled("placeholders")) {
+        placeholderModel.clear()
+        previewInfo = null
+        previewTimer.stop()
+      }
+    } catch (error) {
+      featuresReady = false
+      featureLoadError = "Could not read the feature settings. Retry to load them again."
+    }
+  }
+  function loadFeatures() {
+    if (featureReadProc.running || featureSetProc.running) {
+      featureReloadPending = true
+      return
+    }
+    featureReloadPending = false
+    featureReadProc.running = true
+  }
+  function setFeature(key, value) {
+    if (!featuresReady || featureBusy !== "") return
+    featureSaveError = ""
+    featureBusy = key
+    featureSetProc.command = ["sh", "-c", tool + " features " + q(key) + " " + (value ? "true" : "false")]
+    featureSetProc.running = true
+  }
+
+  Component.onCompleted: loadFeatures()
+  FileView {
+    path: Quickshell.env("HOME") + "/.config/omarchy/workspace-layout/features.json"
+    printErrors: false
+    watchChanges: true
+    onFileChanged: { reload(); root.loadFeatures() }
+  }
+  Process {
+    id: featureReadProc
+    command: ["sh", "-c", root.tool + " features"]
+    stdout: StdioCollector { id: featureReadOut; waitForEnd: true }
+    stderr: StdioCollector { id: featureReadError; waitForEnd: true }
+    onExited: function(exitCode) {
+      if (exitCode === 0) root.takeFeatures(featureReadOut.text)
+      else {
+        root.featuresReady = false
+        root.featureLoadError = String(featureReadError.text || "Could not load feature settings. Retry to try again.").trim()
+      }
+      if (root.featureReloadPending) Qt.callLater(root.loadFeatures)
+    }
+  }
+  Process {
+    id: featureSetProc
+    stdout: StdioCollector { id: featureSetOut; waitForEnd: true }
+    stderr: StdioCollector { id: featureSetError; waitForEnd: true }
+    onExited: function(exitCode) {
+      if (exitCode === 0) root.takeFeatures(featureSetOut.text)
+      else root.featureSaveError = String(featureSetError.text || "Could not save that choice. Try again.").trim()
+      root.featureBusy = ""
+      root.loadFeatures()
+      root.quickAppsLoad()
+    }
+  }
 
   readonly property var cur: deskFor(desk)
   readonly property var wins: cur ? cur.windows : []
@@ -100,9 +189,36 @@ Panel {
   }
 
   function quickAppsLoad() { quickApps.load() }
+  function selectTab(index) {
+    tab = index
+    if (index === 1) quickAppsLoad()
+    if (index === 2) {
+      loadFeatures()
+      Qt.callLater(function() {
+        var first = featureRepeater.itemAt(0)
+        if (first) first.control.forceActiveFocus()
+      })
+    }
+  }
+
+  Shortcut {
+    sequence: "Ctrl+Tab"
+    context: Qt.ApplicationShortcut
+    enabled: root.opened
+    onActivated: root.selectTab((root.tab + 1) % 3)
+  }
+  Shortcut {
+    sequence: "Ctrl+Shift+Tab"
+    context: Qt.ApplicationShortcut
+    enabled: root.opened
+    onActivated: root.selectTab((root.tab + 2) % 3)
+  }
 
   function isDirty(n) { return dirtyList.indexOf(n) >= 0 }
-  function markDirty(n) { if (!isDirty(n)) dirtyList = dirtyList.concat([n]) }
+  function markDirty(n) {
+    if (featureEnabled("restore_layouts") && featureEnabled("apply_on_visit") && !isDirty(n))
+      dirtyList = dirtyList.concat([n])
+  }
   function clearDirty(n) { dirtyList = dirtyList.filter(function(x) { return x !== n }) }
 
   // Shell-quote for the `sh -c` strings below (classes have dots and dashes, titles anything).
@@ -181,7 +297,7 @@ Panel {
   // The arrow: go to the desk and put it back now. Cleared from the dirty list FIRST — the
   // restore focuses that desk, which is the very event the next-visit watcher acts on.
   function applyNow() {
-    if (desk === 0) return
+    if (desk === 0 || !featureEnabled("restore_layouts")) return
     clearDirty(desk)
     actProc.command = ["sh", "-c", tool + " restore " + desk]
     actProc.running = true
@@ -202,6 +318,7 @@ Panel {
       cancelAdding()
       load()
       root.quickAppsLoad()
+      root.loadFeatures()
     }
   }
 
@@ -233,12 +350,13 @@ Panel {
   // it. `workspacev2` carries "id,name"; the plain `workspace` event carries only the name.
   Connections {
     target: Hyprland
+    enabled: root.featureEnabled("restore_layouts") && root.featureEnabled("apply_on_visit")
     function onRawEvent(event) {
       if (!event || event.name !== "workspacev2") return
       var id = parseInt(String(event.data).split(",")[0], 10)
       if (isNaN(id) || !root.isDirty(id) || visitProc.running) return
       root.clearDirty(id)
-      visitProc.command = ["sh", "-c", root.tool + " restore " + id]
+      visitProc.command = ["sh", "-c", root.tool + " restore --on-visit " + id]
       visitProc.running = true
     }
   }
@@ -269,6 +387,7 @@ Panel {
   property double layingSince: 0
 
   function laying(message) {
+    if (!featureEnabled("layout_messages")) return
     layingMessage = String(message || "Barbarian is laying out your workspace")
     layingReason = ""
     layingOpen = true
@@ -443,6 +562,7 @@ Panel {
   property var placeholderNotes: ({})
 
   function placeholder(json) {
+    if (!featureEnabled("placeholders")) return "disabled"
     var p
     try { p = JSON.parse(json) } catch (e) { return "bad json" }
     placeholderModel.append({
@@ -730,6 +850,7 @@ Panel {
   // shows it for ten seconds.
   property var previewInfo: null
   function placeholderPreview(json) {
+    if (!featureEnabled("placeholders")) return "disabled"
     try { previewInfo = JSON.parse(json) } catch (e) { return "bad json" }
     if (!installedApps.length && !installedAppsProc.running) installedAppsProc.running = true
     previewTimer.restart()
@@ -984,6 +1105,10 @@ Panel {
       queuedConflict = ""
       conflictProc.command = ["sh", "-c", tool + " conflicts " + q(checkingConflict)]
       conflictProc.running = true
+    }
+
+    function scrollTarget(item) {
+      return item === captureArea ? shortcutButton : item
     }
 
     function startCapture() {
@@ -1433,7 +1558,8 @@ Panel {
 
           Button {
             id: shortcutButton
-            width: Style.space(230)
+            width: Math.max(Style.space(100), Math.min(Style.space(230),
+              parent.width - shortcutLabel.width - manualButton.width - parent.spacing * 2))
             height: Style.space(34)
             text: qa.capturing ? "press it now…" : (qa.draft.key ? qa.draft.key : "Press shortcut…")
             iconText: "󰌌"
@@ -1471,11 +1597,13 @@ Panel {
               : "Use this when pressing the shortcut opens something else."
             onClicked: qa.keyListing ? qa.startCapture() : qa.startManualEntry()
           }
+        }
 
+        Row {
+          width: parent.width
+          spacing: Style.space(14)
           Item {
-            width: Math.max(0, parent.width - shortcutLabel.width - shortcutButton.width
-                            - manualButton.width - cancelButton.width - saveButton.width
-                            - parent.spacing * 4)
+            width: Math.max(0, parent.width - cancelButton.width - saveButton.width - parent.spacing * 2)
             height: 1
           }
 
@@ -1566,82 +1694,38 @@ Panel {
 
     // ---- the footer -------------------------------------------------------------------------------
 
-    Item {
+    Toggle {
       width: qa.width
-      height: Style.space(34)
-
-      Row {
-        anchors.left: parent.left
-        anchors.verticalCenter: parent.verticalCenter
-        spacing: Style.space(8)
-
-        Text {
-          anchors.verticalCenter: parent.verticalCenter
-          text: "󰌌"
-          color: qa.muted
-          font.family: qa.fontFamily
-          font.pixelSize: Style.font.iconSmall
-        }
-
-        Rectangle {
-          width: keyCapText.implicitWidth + Style.space(16)
-          height: Style.space(24)
-          radius: Style.space(5)
-          color: "transparent"
-          border.width: 1
-          border.color: qa.line
-          anchors.verticalCenter: parent.verticalCenter
-          Text {
-            id: keyCapText
-            anchors.centerIn: parent
-            text: "SUPER"
-            color: qa.foreground
-            font.family: qa.fontFamily
-            font.pixelSize: Style.font.caption
-          }
-        }
-
-        Text {
-          anchors.verticalCenter: parent.verticalCenter
-          text: "+"
-          color: qa.muted
-          font.family: qa.fontFamily
-          font.pixelSize: Style.font.caption
-        }
-
-        Rectangle {
-          width: Style.space(30)
-          height: Style.space(24)
-          radius: Style.space(5)
-          color: "transparent"
-          border.width: 1
-          border.color: qa.line
-          anchors.verticalCenter: parent.verticalCenter
-          Text {
-            anchors.centerIn: parent
-            text: "W"
-            color: qa.foreground
-            font.family: qa.fontFamily
-            font.pixelSize: Style.font.caption
-          }
-        }
-
-        Text {
-          anchors.verticalCenter: parent.verticalCenter
-          text: qa.model.hide_on_close ? "Hides these apps instead of closing them"
-                                      : "Closes these apps — click to hide them instead"
-          textFormat: Text.PlainText
-          color: qa.muted
-          font.family: qa.fontFamily
-          font.pixelSize: Style.font.caption
-        }
-      }
-
-      MouseArea {
-        anchors.fill: parent
-        cursorShape: Qt.PointingHandCursor
-        onClicked: qa.run(["option", "hide_on_close", qa.model.hide_on_close ? "false" : "true"])
-      }
+      label: "Hide quick apps on close"
+      description: root.featureEnabled("quick_apps")
+        ? "SUPER+W hides quick apps. Off closes them normally."
+        : "Quick apps is off in Features. Your app choices are kept."
+      checked: root.featureEnabled("hide_on_close")
+      enabled: root.featuresReady && root.featureEnabled("quick_apps")
+      opacity: enabled ? 1 : 0.65
+      foreground: root.featureForeground
+      accent: qa.accent
+      fontFamily: qa.fontFamily
+      titleSize: Style.font.body
+      Accessible.role: Accessible.CheckBox
+      Accessible.name: label
+      Accessible.description: description
+      Accessible.checkable: true
+      Accessible.checked: checked
+      Accessible.onToggleAction: if (enabled) clicked()
+      onClicked: root.setFeature("hide_on_close", !checked)
+    }
+    Text {
+      visible: root.featureSaveError !== "" || root.featureBusy === "hide_on_close"
+      width: qa.width
+      text: root.featureSaveError || "Saving the close behavior…"
+      textFormat: Text.PlainText
+      wrapMode: Text.WordWrap
+      color: qa.foreground
+      font.family: qa.fontFamily
+      font.pixelSize: Style.font.body
+      Accessible.role: root.featureSaveError ? Accessible.AlertMessage : Accessible.StaticText
+      Accessible.name: text
     }
   }
 
@@ -1724,7 +1808,7 @@ Panel {
     PanelKeyCatcher {
       id: keyCatcher
       anchors.fill: parent
-      blocked: root.tab === 1 && !activeFocus
+      blocked: root.tab !== 0 && !activeFocus
       // Escape backs out of a pick or a placement first; with nothing pending it closes.
       // Everything is saved as it happens, so there is nothing to cancel.
       onCloseRequested: {
@@ -1804,6 +1888,7 @@ Panel {
 
             PanelActionButton {
               iconText: root.iconSave
+              visible: root.tab === 0
               tooltipText: "Record " + root.deskName + " as it is now (HYPER+S there)"
               foreground: root.foreground
               hoverColor: root.accent
@@ -1814,7 +1899,11 @@ Panel {
 
             PanelActionButton {
               iconText: root.iconRestore
-              tooltipText: "Go to " + root.deskName + " and put it back now (HYPER+R there)"
+              visible: root.tab === 0
+              enabled: root.featureEnabled("restore_layouts")
+              opacity: enabled ? 1 : 0.45
+              tooltipText: enabled ? "Go to " + root.deskName + " and put it back now (HYPER+R there)"
+                                   : "Layout restoration is off in Features"
               foreground: root.foreground
               hoverColor: root.accent
               fontFamily: root.fontFamily
@@ -1836,58 +1925,33 @@ Panel {
 
         Item { width: 1; height: Style.space(8) }
 
-        // Two tabs: the desks, and the quick apps. Nothing else in the panel changes between
-        // them — the hero and its actions belong to the desks, and stay put.
         Row {
           id: tabStrip
           width: parent.width
           spacing: Style.space(6)
 
-          readonly property real chipWidth: (width - spacing) / 2
+          readonly property real chipWidth: (width - spacing * 2) / 3
 
           Repeater {
-            model: ["Desks", "Quick apps"]
-
-            delegate: Rectangle {
+            model: ["Desks", "Quick apps", "Features"]
+            delegate: Button {
+              required property int index
+              required property string modelData
               width: tabStrip.chipWidth
-              height: tabLabel.implicitHeight + Style.space(14)
-              radius: Style.space(4)
-              color: root.tab === index ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.15)
-                                        : "transparent"
-              border.width: 1
-              border.color: root.tab === index ? root.accent : Qt.darker(root.foreground, 1.8)
-
-              Row {
-                anchors.centerIn: parent
-                spacing: Style.space(10)
-
-                Text {
-                  anchors.verticalCenter: parent.verticalCenter
-                  // Material Design glyphs, from the same block as the panel's own snake — the
-                  // Font Awesome pair tried first drew nothing at all (seen on screen 2026-09-06).
-                  text: index === 0 ? "󰕰" : "󱓞"
-                  color: root.tab === index ? root.accent : root.muted
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.iconSmall
-                }
-
-                Text {
-                  id: tabLabel
-                  anchors.verticalCenter: parent.verticalCenter
-                  text: modelData
-                  textFormat: Text.PlainText
-                  color: root.tab === index ? root.accent : root.foreground
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.body
-                  font.bold: root.tab === index
-                }
-              }
-
-              MouseArea {
-                anchors.fill: parent
-                cursorShape: Qt.PointingHandCursor
-                onClicked: { root.tab = index; if (index === 1) root.quickAppsLoad() }
-              }
+              text: modelData
+              bordered: true
+              focusable: true
+              selected: root.tab === index
+              foreground: root.foreground
+              accent: root.accent
+              fontFamily: root.fontFamily
+              fontSize: Style.font.body
+              Accessible.role: Accessible.PageTab
+              Accessible.name: text
+              Accessible.selected: selected
+              Accessible.onPressAction: clicked()
+              Keys.onEscapePressed: root.close()
+              onClicked: root.selectTab(index)
             }
           }
         }
@@ -2450,7 +2514,11 @@ Panel {
                 ? "Adding " + root.adding.label + ": click the window it should sit beside, then pick a side."
                 : root.isDirty(root.desk)
                   ? "Changed here — put back the next time you go to " + root.deskName + ", or now with the arrow."
-                  : ""
+                  : !root.featureEnabled("restore_layouts")
+                    ? "Layout restoration is off in Features. Edits are still saved."
+                    : !root.featureEnabled("apply_on_visit")
+                      ? "Edits are saved. Use the restore arrow to apply them."
+                      : ""
               textFormat: Text.PlainText
               elide: Text.ElideRight
               font.family: root.fontFamily
@@ -2473,10 +2541,158 @@ Panel {
           }
         }
 
-        QuickAppsTab {
-          id: quickApps
+        Flickable {
+          id: quickScroll
           width: parent.width
           visible: root.tab === 1
+          height: Math.min(contentHeight, Math.max(Style.space(100),
+            panel.availableCardHeight - panel.verticalContentInset - y))
+          contentWidth: width
+          contentHeight: quickApps.implicitHeight
+          boundsBehavior: Flickable.StopAtBounds
+          clip: true
+          ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded; active: true }
+
+          QuickAppsTab {
+            id: quickApps
+            width: quickScroll.width - Style.space(12)
+          }
+
+          Connections {
+            target: quickApps.Window.window
+            function onActiveFocusItemChanged() {
+              var item = quickApps.scrollTarget(quickApps.Window.window ? quickApps.Window.window.activeFocusItem : null)
+              if (!item || !quickScroll.visible) return
+              var ancestor = item
+              while (ancestor && ancestor !== quickApps) ancestor = ancestor.parent
+              if (!ancestor) return
+              var point = item.mapToItem(quickApps, 0, 0)
+              if (point.y < quickScroll.contentY) quickScroll.contentY = point.y
+              else if (point.y + item.height > quickScroll.contentY + quickScroll.height)
+                quickScroll.contentY = point.y + item.height - quickScroll.height
+            }
+          }
+        }
+
+        Column {
+          id: featuresTab
+          width: parent.width
+          visible: root.tab === 2
+          spacing: Style.space(12)
+          Keys.onEscapePressed: root.close()
+
+          Text {
+            id: featureHelp
+            width: parent.width
+            text: "Switch features off to test them separately. Saved layouts and app choices are kept."
+            textFormat: Text.PlainText
+            wrapMode: Text.WordWrap
+            color: root.foreground
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.body
+          }
+
+          Flickable {
+            id: featureScroll
+            width: parent.width
+            height: Math.max(Style.space(100), Math.min(Style.space(520),
+              panel.availableCardHeight - panel.verticalContentInset - featuresTab.y
+              - featureHelp.height - featureFeedback.height - featuresTab.spacing * 2))
+            contentWidth: width
+            contentHeight: featureRows.implicitHeight
+            clip: true
+            boundsBehavior: Flickable.StopAtBounds
+            ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded; active: true }
+
+            function reveal(item) {
+              var point = item.mapToItem(featureRows, 0, 0)
+              if (point.y < contentY) contentY = point.y
+              else if (point.y + item.height > contentY + height) contentY = point.y + item.height - height
+            }
+
+            Column {
+              id: featureRows
+              width: featureScroll.width - Style.space(12)
+              spacing: Style.space(8)
+              Repeater {
+                id: featureRepeater
+                model: root.featureCatalog
+                delegate: Column {
+                  required property var modelData
+                  required property int index
+                  property alias control: featureToggle
+                  width: featureRows.width
+                  spacing: Style.space(8)
+
+                  Text {
+                    visible: index === 0 || root.featureCatalog[index - 1].group !== modelData.group
+                    width: parent.width
+                    topPadding: index > 0 ? Style.space(12) : 0
+                    text: modelData.group
+                    color: root.foreground
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.body
+                    font.bold: true
+                  }
+
+                  Toggle {
+                    id: featureToggle
+                    width: parent.width
+                    label: modelData.label
+                    description: modelData.description + (modelData.requires && !root.featureEnabled(modelData.requires)
+                      ? " Paused while “" + root.featureLabel(modelData.requires) + "” is off." : "")
+                    checked: root.featureEnabled(modelData.key)
+                    enabled: root.featuresReady
+                    foreground: root.featureForeground
+                    accent: root.accent
+                    fontFamily: root.fontFamily
+                    titleSize: Style.font.body
+                    Accessible.role: Accessible.CheckBox
+                    Accessible.name: label
+                    Accessible.description: description + (root.featureBusy === modelData.key ? " Saving." : "")
+                    Accessible.checkable: true
+                    Accessible.checked: checked
+                    Accessible.onToggleAction: if (enabled) clicked()
+                    onActiveFocusChanged: if (activeFocus) featureScroll.reveal(this)
+                    onClicked: root.setFeature(modelData.key, !checked)
+                  }
+                }
+              }
+            }
+          }
+
+          Row {
+            id: featureFeedback
+            width: parent.width
+            spacing: Style.space(12)
+            Text {
+              width: parent.width - (featureRetry.visible ? featureRetry.width + parent.spacing : 0)
+              text: root.featureLoadError || root.featureSaveError
+                || (root.featureBusy ? "Saving “" + root.featureLabel(root.featureBusy) + "”…"
+                  : root.featuresReady ? "Changes are saved as you switch."
+                    : "Loading features…")
+              textFormat: Text.PlainText
+              wrapMode: Text.WordWrap
+              color: root.foreground
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+              Accessible.role: root.featureLoadError || root.featureSaveError ? Accessible.AlertMessage : Accessible.StaticText
+              Accessible.name: text
+            }
+            Button {
+              id: featureRetry
+              visible: root.featureLoadError !== ""
+              text: "Retry"
+              bordered: true
+              focusable: true
+              foreground: root.foreground
+              accent: root.accent
+              Accessible.role: Accessible.Button
+              Accessible.name: text
+              Accessible.onPressAction: clicked()
+              onClicked: root.loadFeatures()
+            }
+          }
         }
 
       }
