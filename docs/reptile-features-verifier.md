@@ -1,15 +1,17 @@
 # C-002 independent hostile verification
 
-Reviewer: `/root/feature_verifier`. Scope: the uncommitted Reptile switches, engine guards,
-shortcut updates, QML controls and installer. App code is owned by the parent agent; this
-review changes only this record. No live desktop mutation or service restart is permitted.
+Reviewer: `/root/feature_verifier`. Scope: Reptile switches, engine guards, shortcut updates,
+QML controls, installer, harness and the later Enterprise caller rollout. App code is owned
+by the parent agent; this review changes only this record. No live desktop mutation or service
+restart is permitted.
 
 Final independent assessment: approved within the reviewed code/test scope. V-001 through
-V-007 are resolved. The seven original Python suites and offscreen Qt suite passed, followed
+V-008 are resolved. The seven original Python suites and offscreen Qt suite passed, followed
 by the new harness suite and focused UI/cleanup resolution probes. No remaining code blocker
 was found in the final changes.
-The parent's operated native UI checks, Enterprise automatic callers and live deployment
-are separate evidence boundaries; this report does not claim the running desktop is updated.
+The parent's operated native UI checks and live deployment are separate evidence boundaries;
+this report does not claim the running desktop is updated. Enterprise's final caller source
+passed the 34-case isolated review recorded below.
 
 ## Confirmed findings
 
@@ -205,11 +207,9 @@ are separate evidence boundaries; this report does not claim the running desktop
   floating-window changes, manual/automatic/on-visit gates and preserved saved layouts.
   No further window-action defect was confirmed. The final Python suites exercise these
   decisions using private fixtures and mocked compositor calls.
-- Reviewed the external automatic restore wrappers and identified their remaining final-focus
-  action and misleading replay log when an engine call is skipped. The parent reports that
-  Enterprise is adding an early off check before waits/window reads/focus, while retaining
-  the engine's `--automatic` guard. Those scripts and their deployment are outside this repo;
-  the parent must verify the integration before claiming complete automatic isolation.
+- The initial external-caller review identified remaining wrapper actions when restoration is
+  disabled. See the Enterprise automatic-caller rollout review below for the corrected source
+  and independent resolution results. Deployment remains the parent's verification boundary.
 
 ## Final independent suite run
 
@@ -243,10 +243,67 @@ probe passed the three cases documented under V-007. `bash -n tests/nested/neste
 
 ## Evidence limits
 
-V-001 through V-007 are resolved within the reviewed source and isolated checks. This reviewer
+V-001 through V-008 are resolved within the reviewed source and isolated checks. This reviewer
 did not operate the parent's nested compositor, install the live build, restart the shell or
 verify deployed automatic callers. The parent's final report must distinguish its operated
 evidence from this independent source/test result. The 112-test Python run and 46-check Qt run
 precede the UI-only follow-up; the new harness suite and focused resolution probes were run
 after it. No unresolved blocker remains in the reviewed code. This approval does not assert
 that the live shell or external automatic callers have been updated.
+
+## Enterprise automatic-caller rollout review
+
+Reviewed Enterprise commits `65fa254`, `b79cf94` and the correction `477182e` for
+`boot-apps.sh` and `portable-boot-restore.sh`. The worktree versions of those two files match
+477182e. Commit b79cf94 captures feature output and checks the engine exit status separately.
+The guards precede network/session waits, window reads and final focus; every restore carries
+`--automatic`.
+
+Private copies from b79cf94 were tested with private HOME, snapshots and stub engine/compositor/
+network/wait commands. For each caller, ON restored the two numeric recordings with
+`restore --automatic --quiet`; restore-off, automatic-off, both-off, missing value, wrong type,
+wrong object, empty output, malformed JSON, failed read, valid ON output followed by exit 7,
+and a missing engine made no effectful calls. These 24 scenarios passed. No live caller,
+setting, network request, window command or service was executed by this review.
+
+### V-008 — resolved: extra JSON documents bypassed the caller's strict response contract
+
+- Both gates use streaming `jq -e`, whose status follows its final output:
+  `boot-apps.sh:37–38` and `portable-boot-restore.sh:38–39` at b79cf94.
+- A feature response containing an OFF JSON document followed by an ON JSON document is not
+  the engine's single-object response, yet both callers accept it. The two additional private
+  scenarios reached the network/session wait, two restore calls and final-focus stub.
+- Result: 24 of 26 caller scenarios passed; the two extra-document cases failed the expected
+  refusal. This is a confirmed gap in the requested invalid-read guarantee, not evidence that
+  the installed engine currently emits such a response.
+- Requested resolution: slurp the input, require exactly one JSON object, then require both
+  boolean settings to be true on that object. Keep the separate engine-exit-status check.
+- Resolution: Enterprise commit `477182e` uses `jq -es` with `length == 1` and both strict
+  boolean checks, while retaining the independent engine status check.
+- Independent final retest copied both callers from that exact commit. All **34 scenarios**
+  passed: the original matrix plus ON/OFF, ON/ON and null/ON document sequences and a valid
+  single response surrounded by whitespace. Every invalid/off/missing/failed response made
+  no network/session wait, window read, restore or focus call. Every allowed restore carried
+  `--automatic`. Both Bash syntax checks and the fixture script exited 0. No live caller ran.
+
+## Voyager completion watcher review
+
+Reviewed the final ignored `docs/artifacts/reptile-features/watch-voyager.py`, including its
+change from a self-message to an explicit self-nudge. No blocker was found for arming it.
+
+- The remote Python probe only reads installed Reptile.qml bytes and process command lines.
+  Its process selector now excludes IPC clients. The expected QML hash matches this repo's
+  current Reptile.qml. There are no remote writes, restarts or window actions.
+- The watcher nudges only `@barbarian`, writes its local notification marker only after the
+  CLI reports delivery, and stops only `barbarian-voyager-verify.timer`. Busy, cooldown,
+  missing-session and unsuccessful delivery responses leave the marker absent for a retry.
+- Checked the installed hobnob CLI's source: `nudge_agent()` prints the watched
+  `nudged @barbarian in ` text only for a delivered outcome; other outcomes have distinct
+  text despite returning exit 0. The watcher's additional text check is therefore needed.
+- The local watcher and embedded remote probe compile successfully without execution.
+  The parent reports four private stub scenarios passed for old state, busy notification,
+  delivered notification and an already-latched run. Those are the parent's test results;
+  this reviewer did not send a live nudge or arm/stop a real timer.
+- A matching installed hash and a different shell PID are a reason to inspect the live panel,
+  not proof that the running QML cache contains the new code. The notification explicitly
+  requires final live verification; task closure must still depend on that check.

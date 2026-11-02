@@ -16,3 +16,4 @@ Allow me to enable/disable Reptile features individually. I am worried one of th
 - 2026-11-02 12:53 · Progress by @barbarian: Tests green; fixing final review findings
 - 2026-11-02 13:08 · Progress by @barbarian: Pushed; installation waits for unlock
 - 2026-11-02 13:18 · Parked by @barbarian: Waiting for Enterprise and Voyager to unlock, then the queued automatic-restore caller rollout and live checks (P-006).
+- 2026-11-02 13:56 · Parked by @barbarian: Waiting only for Voyager's panel update after unlock; automatic restore is deployed, Enterprise and Caboodle are verified, and a read-only follow-up check is armed (P-006).

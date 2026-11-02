@@ -75,12 +75,15 @@ http://100.124.40.42:3012/peacock/barbarian/P-006. Its 96 usability/visual check
 are in a self-contained HTML artifact, previewed at 1440 and 430 pixels wide with no horizontal
 overflow or broken images. The working report source is ignored under docs/artifacts/reptile-features.
 
-Deployment state last verified after the push:
+Deployment state last verified during the rollout follow-up:
 
-- Enterprise is locked, still running its old shell (PID 3016). barbarian-install-pending.service
-  is active and waits for unlock. Do not force a restart or write plugin files while locked.
+- Enterprise unlocked and its deferred installer completed. Installed engines and Reptile.qml
+  match the reviewed source. Its main shell PID 457406 started at 13:31:44 after installation.
+  The live Features tab loaded through the actual panel, and Ctrl+Tab selected it. The panel
+  was closed afterwards; no live feature choices were changed. Caboodle's live settings JSON
+  returns all 11 Reptile switches with boolean values and no problems.
 - DS9 has matching Reptile.qml and engines; its new shell PID 1901295 started after installation.
-- Voyager has matching engines and helper, but is locked and still has the old panel in shell
+- Voyager has matching engines and helper, but remains locked and still has the old panel in shell
   PID 2000. Its shell uses ~/omarchy, not /usr/share/omarchy. Enterprise's setup-portable owns
   plugin installation there; portable-selfheal.timer is active and retries every 15 minutes.
 - Both ships returned valid features and desks JSON with their recorded Hyprland session context.
@@ -89,8 +92,37 @@ Deployment state last verified after the push:
   were then checked. Future companion files must be coordinated before sync, not merely added
   to this repo's installer. Ship sync copies the working tree, including uncommitted edits.
 
-Remaining work is live Enterprise/Voyager verification and Enterprise's automatic-caller rollout.
-Enterprise is preparing a persistent waiter for its tested caller patches, gated on all three
-installed engines returning the new feature settings; it will message @barbarian when it completes.
-Keep C-002 open until that boundary is resolved, verify Caboodle's 11 live Reptile rows, update
-P-006 in place, then close the carrot. The feature store must retain Dave's existing choices.
+Enterprise's automatic-caller changes are committed as 65fa254, b79cf94 and 477182e
+(v1.139.18, v1.139.19 and v1.139.22).
+The installed Enterprise boot-apps.sh and both ships' portable-boot-restore.sh match those sources.
+Both callers check the shared restoration switches before network/session waits or window/focus
+actions, and pass --automatic to every restore. A private copied-script probe found that the first
+Enterprise gate ignored an engine failure after valid JSON output; Enterprise corrected it in
+b79cf94. The independent verifier then found that a second JSON document could override an off
+answer in the first; 477182e requires exactly one answer. All 30 copied-script cases now pass,
+including on/off, invalid/missing settings, partial-output failure and all four two-document
+orderings. Every disabled/error case made no network, window, focus or restore call.
+The probe source is ignored under docs/artifacts/reptile-features/probe-callers.py. Live login
+scripts were never executed for testing. An independent caller follow-up review is recorded in
+docs/reptile-features-verifier.md.
+
+The live Caboodle Settings page was also checked in isolated browser contexts at 1440 and 430
+pixels wide. Both return 11 enabled, named Reptile switch controls, current boolean state and no
+horizontal overflow. No live controls were activated. A damaged legacy quick-apps.json already
+produces explicit engine stderr, which the Features panel displays as its load error; this was
+confirmed with a private HOME. The legacy file is only read until hide_on_close migrates.
+
+Remaining delivery work is Voyager's panel installation and fresh shell after its next unlock,
+followed by final live verification. Its existing portable-selfheal timer owns that update; do not
+restart it or write plugin files while locked. Keep C-002 open until that boundary is resolved,
+update P-006 in place and close the carrot. The feature store must retain Dave's existing choices.
+
+A read-only follow-up timer is armed on Enterprise: barbarian-voyager-verify.timer, every two
+minutes. Its script is docs/artifacts/reptile-features/watch-voyager.py. It reads Voyager's installed
+QML hash and main shell PID, then nudges @barbarian only after the expected hash and a new PID
+appear. It never installs or restarts anything on the ship. Delivery must succeed before its local
+.notified marker is written and its own timer stops. A matching hash/new PID triggers inspection;
+it does not close the task. From 9 November it stops remote polling and asks the session to recheck
+the parked work. The transient timer lasts for the current Enterprise user-manager lifetime;
+re-arm it if the machine restarts before Voyager updates. The independent verifier approved the
+watcher source; four private command-stub scenarios passed before arming it.
