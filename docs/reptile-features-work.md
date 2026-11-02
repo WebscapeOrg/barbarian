@@ -53,9 +53,10 @@ Isolated compositor: tests/nested/nested, signature
 efb50993780079460b0cbed1363e2166a2de1d9f_1793621549_1778625535, wayland-2, work directory
 /run/user/1000/barbarian-nested. Record its PIDs before cleanup; do not kill by a process pattern.
 
-Recorded active test processes: nested Hyprland PID 3373862 and Quickshell PID 3973652. Earlier
-test Quickshell PIDs 3435469, 3712420 and 3783207 were stopped by their exact PID. The source-watching
-harness reloads and closes its panel after QML edits; reopen before operating it.
+The isolated desktop was stopped after verification: nested Hyprland PID 3373862 and Quickshell
+PID 3973652 are gone, and the validated runtime folder was moved to a unique Trash directory.
+Earlier test Quickshell PIDs 3435469, 3712420 and 3783207 were stopped by their exact PID too.
+The source-watching harness reloads and closes its panel after QML edits; reopen before operating it.
 
 The independent verifier approved V-001 through V-007. The seven Python engine/installer suites
 passed 112 tests, the new harness suite passed 6 tests, and the existing Qt drag suites passed
@@ -69,9 +70,27 @@ settings, a failed save and recovery, pending edit clearing and placeholder remo
 test settings/windows changed. Native AT-SPI exposed the test application but no descendants;
 screen-reader operation is not claimed. The control roles/actions are present in source.
 
-Remaining delivery steps: commit and push the reviewed code; verify installation on Enterprise
-and both ships; let Enterprise deploy its prepared automatic-caller patches after compatibility
-is verified; publish the HTML report; close C-002 after the running system is verified. Enterprise
-was locked at the last check and still running its old shell (PID 3016); use the installer waiter,
-never a forced restart. The Enterprise agent has been asked to prepare a persistent integration
-waiter too. Keep the task open until this deployment boundary is resolved.
+Reviewed code is committed and pushed as dbb8384. The report is P-006:
+http://100.124.40.42:3012/peacock/barbarian/P-006. Its 96 usability/visual checks and screenshots
+are in a self-contained HTML artifact, previewed at 1440 and 430 pixels wide with no horizontal
+overflow or broken images. The working report source is ignored under docs/artifacts/reptile-features.
+
+Deployment state last verified after the push:
+
+- Enterprise is locked, still running its old shell (PID 3016). barbarian-install-pending.service
+  is active and waits for unlock. Do not force a restart or write plugin files while locked.
+- DS9 has matching Reptile.qml and engines; its new shell PID 1901295 started after installation.
+- Voyager has matching engines and helper, but is locked and still has the old panel in shell
+  PID 2000. Its shell uses ~/omarchy, not /usr/share/omarchy. Enterprise's setup-portable owns
+  plugin installation there; portable-selfheal.timer is active and retries every 15 minutes.
+- Both ships returned valid features and desks JSON with their recorded Hyprland session context.
+- The first ship sync omitted the new shared module from Enterprise's separate portable copy
+  list. Enterprise repaired it in ec36d2c (v1.139.13); the corrected source and installed hashes
+  were then checked. Future companion files must be coordinated before sync, not merely added
+  to this repo's installer. Ship sync copies the working tree, including uncommitted edits.
+
+Remaining work is live Enterprise/Voyager verification and Enterprise's automatic-caller rollout.
+Enterprise is preparing a persistent waiter for its tested caller patches, gated on all three
+installed engines returning the new feature settings; it will message @barbarian when it completes.
+Keep C-002 open until that boundary is resolved, verify Caboodle's 11 live Reptile rows, update
+P-006 in place, then close the carrot. The feature store must retain Dave's existing choices.

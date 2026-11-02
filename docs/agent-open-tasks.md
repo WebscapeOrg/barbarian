@@ -14,3 +14,5 @@ Allow me to enable/disable Reptile features individually. I am worried one of th
 - 2026-11-02 12:07 · Progress by @barbarian: Building feature controls and engine guards
 - 2026-11-02 12:27 · Progress by @barbarian: Switches working; testing races and Caboodle integration
 - 2026-11-02 12:53 · Progress by @barbarian: Tests green; fixing final review findings
+- 2026-11-02 13:08 · Progress by @barbarian: Pushed; installation waits for unlock
+- 2026-11-02 13:18 · Parked by @barbarian: Waiting for Enterprise and Voyager to unlock, then the queued automatic-restore caller rollout and live checks (P-006).
