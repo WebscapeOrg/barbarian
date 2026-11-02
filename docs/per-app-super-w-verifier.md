@@ -222,3 +222,55 @@ latch absent for a later timer run. Ready panels still take the existing final-n
 and latch path. No real subprocess action ran. The maintenance path's bounded subprocess
 waits total at most 50 seconds; the owner's planned 60-second service timeout was not live
 verified by this reviewer.
+
+## Final delivery review — 2 November 2026
+
+Delivery is approved within the evidence below. No remaining source, installation-evidence or
+report blocker was found. The app source, tests, installer and README have no difference from
+reviewed commit `9521d30`; that comparison exited 0. Source suites were not repeated for this
+read-only delivery pass.
+
+Independent local and SSH reads found the same installed hashes on all three machines:
+
+- Reptile.qml: `d1676b6141488ccb1ec3c3a8f3b357832fab5ad5e9e7bea5d736e1fedb354fa9`.
+- quick-app: `aabaa047e3f6e46002db18848bc03cc7d2892e7a32f5e07bca5f7ed938db091c`.
+- reptile_features.py: `0c8a8141a08ff29debfc0d7cd9c185373fb4eb04afcf7b29231857a67e2415f1`.
+
+These match the reviewed repository files. Process-command-line reads selected one main shell
+per machine, excluding IPC clients: Enterprise 3170160, DS9 2357128 and Voyager 1221374.
+The Enterprise installer and watcher timer/service all returned `LoadState=not-found` and
+`ActiveState=inactive`. These are fresh observations, not the previous watcher's readiness claim.
+
+Enterprise's current saved hashes independently match the owner's recorded before/after values:
+features.json is `7400eacfae4854dd1d86bff04ca0e3a85c3c0bec647f9017e1063005968ade22`, and
+quick-apps.json is `75ccc4b2fce4773a084e6a0b34fe3de3493e7adc7b65dafad16f519c207888b5`.
+This reviewer read the current files; the earlier baseline and operated inspection are owner
+evidence. No live choice or window action was performed by this reviewer.
+
+An independent GET of Caboodle's live `/settings.json` returned HTTP 200. Its ten Reptile records
+match `live-caboodle-verification.json` exactly: every state is a strict boolean, every problem
+is null, and no `reptile-hide-on-close` record exists. Equal columns and Quick apps are on; the
+other eight are off. No settings mutation endpoint was called.
+
+Independently inspected the owner's two live Enterprise panel images and both Caboodle images.
+The Quick apps image shows four separate off choices for Claude, ChatGPT, Gemini and Apple
+Music, with clear spacing and complete labels. The Features image shows the visible upper part
+of its scrollable list. Both cropped Caboodle sections show ten labeled controls with the same
+two on states as the API and no global hiding control. The owner operated Enterprise's tab and
+Escape navigation and captured the actual web page at 1440 and 430 pixels; this reviewer did
+not operate those controls or independently measure those browser viewports.
+
+The final report builder and generated HTML correctly distinguish live Enterprise/Caboodle
+images from isolated fixtures, the final feature-test rerun from the seven earlier suites, and
+Enterprise's operated native check from the ships' installed-file/process checks. All seven
+embedded images match their current files and have alternative text. The old pending-install
+claims are absent. The report's syntax check and these content/image checks exited 0. The
+owner's no-overflow/no-JavaScript-error browser checks are reported as owner evidence, not
+inferred from the cropped screenshots.
+
+Limits remain explicit: this verifier did not operate a live panel on any machine; final native
+operation was the owner's Enterprise check. DS9/Voyager evidence establishes installed files
+and main shell processes, not a remote native interaction test. The private handler operation
+does not claim successful hardware SUPER+W dispatch, and no screen-reader success or
+performance improvement is claimed. Apart from this report, this pass wrote no files and made
+no notification, installation, restart, UI or settings mutation.

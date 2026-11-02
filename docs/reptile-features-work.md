@@ -116,11 +116,11 @@ Dave then requested per-app SUPER+W hiding in place of the global choice. That r
 is pushed as 9521d30; its current delivery state and verification are in
 docs/per-app-super-w-work.md and docs/per-app-super-w-verifier.md. The earlier 11-feature/global
 control descriptions above record the initial rollout. The final catalog has ten feature switches
-plus app-specific choices. Enterprise locked again, so both its follow-up and Voyager's new panel
-still wait for safe installation. DS9 has the follow-up files and a fresh shell. Keep C-002 open,
-preserve Dave's choices and use the follow-up work file as the current recovery plan.
+plus app-specific choices. The later unlock installs are complete on all three machines. The
+follow-up work file records the final actual Enterprise panel check, unchanged saved choices and
+Caboodle's ten healthy controls. Its final live verification supersedes the queued state below.
 
-A read-only follow-up timer is armed on Enterprise: barbarian-voyager-verify.timer, every two
+A read-only follow-up timer was armed on Enterprise: barbarian-voyager-verify.timer, every two
 minutes. Its script is docs/artifacts/reptile-features/watch-voyager.py. It reads Voyager's installed
 QML hash and main shell PID. The per-app follow-up expands it to Enterprise too and updates the
 expected hash and baseline PIDs; see the current recovery plan. It never installs or restarts
@@ -130,3 +130,7 @@ it does not close the task. From 9 November it stops remote polling and asks the
 the parked work. The transient timer lasts for the current Enterprise user-manager lifetime;
 re-arm it if the machine restarts before Voyager updates. The independent verifier approved the
 watcher source; four private command-stub scenarios passed before arming it.
+
+The expanded watcher delivered readiness after Enterprise and Voyager matched the reviewed
+per-app QML with fresh shell processes. Its delivered marker now exists; the transient units are
+gone. The final live checks in docs/per-app-super-w-work.md completed the remaining delivery work.

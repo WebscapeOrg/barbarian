@@ -1,7 +1,7 @@
 # C-002 follow-up: per-app SUPER+W
 
 Dave asked: “Id like the hide quick apps with super w to be per quick app instead of global.”
-This extends the held C-002, which still waits for Voyager's unlocked panel rollout.
+This extends C-002. The queued rollout completed after unlock; final live checks are recorded below.
 
 Implementation was isolated from Enterprise's ship-sync in
 `/home/anotherdave/.local/state/barbarian/per-app-super-w`, branch `per-app-super-w`.
@@ -21,12 +21,10 @@ the automatic caller protocol and its two restoration gates remain compatible.
   error and parent-off states. The native Toggle retains its two-child row structure.
 
 Independent verifier: `/root/feature_verifier`; report `docs/per-app-super-w-verifier.md`.
-Check the isolated source/tests, operate the native panel and mixed app behavior in a private
-nested compositor, publish screenshots and the skill check report, then commit/push/install.
-Verify Enterprise's fresh shell and Caboodle's 10 remaining feature switches. Recheck the ships;
-replace the paused Voyager watcher hash only after the final QML is ready. The old
-`barbarian-voyager-verify.timer` is stopped during this follow-up to prevent an obsolete completion
-signal. Do not restart or write Voyager's plugin while locked; setup-portable owns that update.
+The isolated source/tests, operated private native panel, mixed app behavior and skill check report
+were completed before commit/push/install. The original watcher was stopped while the follow-up
+changed the expected QML, then rearmed against the final reviewed source. Voyager's plugin rollout
+remained owned by setup-portable; no locked plugin write or forced restart was used.
 
 ## Verified result
 
@@ -53,7 +51,7 @@ http://100.124.40.42:3012/peacock/barbarian/P-006. The HTML was checked at 1440 
 with all details open: no horizontal overflow or broken images. Its working builder remains under
 the ignored docs/artifacts/reptile-features directory.
 
-## Delivery still pending
+## Queued delivery history
 
 Enterprise locked again while tests ran. Its normal installer queued the three changed files;
 barbarian-install-pending.service is active. Installed quick-app, reptile_features.py and QML are
@@ -79,9 +77,46 @@ and asks the session to inspect the parked work instead.
 
 The transient unit pair was recreated and armed after review with a 60-second service timeout.
 Its first real run exited 0 and correctly observed the previous QML on Enterprise/Voyager with
-PIDs 457406/791702. The timer remains active for two-minute checks, and the Enterprise installer
+PIDs 457406/791702. The timer was active for two-minute checks, and the Enterprise installer
 was independently read as active afterwards. The verifier's 27 readiness cases and six additional
 inactive-installer cases used private subprocess stubs; its approval does not assert live loading.
 
-After installation, verify the actual per-app panel and ten healthy Caboodle Reptile switches with
-no global hiding switch. Recheck the ships, update P-006 and close C-002. Keep Dave's choices.
+## Final live verification
+
+The watcher delivered readiness after both pending installs completed. On 2 November, the installed
+QML, quick-app and shared-module hashes were read again on Enterprise, DS9 and Voyager. All match
+source commit 9521d30. The observed main shell processes are Enterprise PID 3170160, started at
+16:26; DS9 PID 2357128; and Voyager PID 1221374, started at 16:50. Enterprise and Voyager were
+unlocked. The installer and completion timer units have disappeared after finishing; the delivered
+watcher marker exists. No installation or restart was needed during this final verification.
+Installed ws-layout features commands also succeeded on all three machines, each returning ten
+strict boolean feature values and no hide_on_close feature. Enterprise's restoration gates remain
+false/false and both ships' remain true/true; their different saved choices were kept.
+
+Enterprise's actual running Quick apps and Features tabs were opened, selected with Ctrl+Tab and
+closed with Escape. The four live app cards each show Hide with SUPER+W off. The installed engine's
+read-only list also normalizes all four as false, preserving Dave's previous global false value.
+No live switch, app shortcut, window action or layout action was activated. JSON hashes before
+and after native inspection were identical:
+
+- features.json: 7400eacfae4854dd1d86bff04ca0e3a85c3c0bec647f9017e1063005968ade22
+- quick-apps.json: 75ccc4b2fce4773a084e6a0b34fe3de3493e7adc7b65dafad16f519c207888b5
+
+The live Caboodle settings.json returned ten Reptile records, each with a boolean state and
+problem=null, and no reptile-hide-on-close record. Isolated browser contexts read the actual
+Settings page at 1440 and 430 pixels wide: ten enabled, labeled switch controls with matching
+states, no global hiding control, no horizontal overflow and no JavaScript errors. No form was
+submitted. Equal columns and Quick apps remain on; the other eight feature choices remain off.
+
+Evidence under the ignored docs/artifacts/reptile-features directory: cropped live Enterprise
+Quick apps/Features panel images, live-caboodle-430.png and live-caboodle-1440.png, and
+live-caboodle-verification.json. P-006 is updated in place. Ship delivery checks read installed
+files and fresh processes; the final operated native panel check was on Enterprise. The app source
+did not change during delivery verification, so its already-passing source suites were not repeated.
+The regenerated report was previewed at 1440 and 430 pixels wide with every review section open:
+seven images loaded, none were broken, and neither viewport overflowed horizontally. P-006's served
+HTML was fetched and matched the final local artifact byte for byte.
+
+The independent verifier approved final delivery after its own current file/process, settings-hash
+and live Caboodle reads, plus screenshot/report inspection. Its addendum records the owner-operated
+native checks separately. C-002 is closed with P-006; no delivery work remains pending.
