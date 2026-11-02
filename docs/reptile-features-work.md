@@ -112,15 +112,19 @@ horizontal overflow. No live controls were activated. A damaged legacy quick-app
 produces explicit engine stderr, which the Features panel displays as its load error; this was
 confirmed with a private HOME. The legacy file is only read until hide_on_close migrates.
 
-Remaining delivery work is Voyager's panel installation and fresh shell after its next unlock,
-followed by final live verification. Its existing portable-selfheal timer owns that update; do not
-restart it or write plugin files while locked. Keep C-002 open until that boundary is resolved,
-update P-006 in place and close the carrot. The feature store must retain Dave's existing choices.
+Dave then requested per-app SUPER+W hiding in place of the global choice. That reviewed follow-up
+is pushed as 9521d30; its current delivery state and verification are in
+docs/per-app-super-w-work.md and docs/per-app-super-w-verifier.md. The earlier 11-feature/global
+control descriptions above record the initial rollout. The final catalog has ten feature switches
+plus app-specific choices. Enterprise locked again, so both its follow-up and Voyager's new panel
+still wait for safe installation. DS9 has the follow-up files and a fresh shell. Keep C-002 open,
+preserve Dave's choices and use the follow-up work file as the current recovery plan.
 
 A read-only follow-up timer is armed on Enterprise: barbarian-voyager-verify.timer, every two
 minutes. Its script is docs/artifacts/reptile-features/watch-voyager.py. It reads Voyager's installed
-QML hash and main shell PID, then nudges @barbarian only after the expected hash and a new PID
-appear. It never installs or restarts anything on the ship. Delivery must succeed before its local
+QML hash and main shell PID. The per-app follow-up expands it to Enterprise too and updates the
+expected hash and baseline PIDs; see the current recovery plan. It never installs or restarts
+anything. Delivery must succeed before its local
 .notified marker is written and its own timer stops. A matching hash/new PID triggers inspection;
 it does not close the task. From 9 November it stops remote polling and asks the session to recheck
 the parked work. The transient timer lasts for the current Enterprise user-manager lifetime;
