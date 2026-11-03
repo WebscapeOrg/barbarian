@@ -34,8 +34,7 @@ def setUpModule():
     unittest.addModuleCleanup(temporary.cleanup)
     directory = pathlib.Path(temporary.name)
     for module, key, path in [(engine.features, "SETTINGS_FILE", directory / "features.json"),
-                              (engine, "QUICK_APPS_FILE", str(directory / "quick-apps.json")),
-                              (engine, "LINK_WINDOWS_FILE", str(directory / "link-windows.json"))]:
+                              (engine, "QUICK_APPS_FILE", str(directory / "quick-apps.json"))]:
         patcher = mock.patch.object(module, key, path)
         patcher.start()
         unittest.addModuleCleanup(patcher.stop)
@@ -346,51 +345,36 @@ class SkylarkRestoration(unittest.TestCase):
 
 class LinkWindows(unittest.TestCase):
     """A link Magpie opened is a guest: never recorded, never closed, never taken for a recorded
-    window or for the new window a restore waits for (Magpie's C-047, hobnob #7314)."""
+    window or for the window a restore waits for. Magpie opens every link through its own page,
+    so the window's class carries that page's name (Magpie's C-047, hobnob #7354)."""
 
     GMAIL = "chrome-mail.google.com__mail_-Profile_1"
-
-    def setUp(self):
-        self.addCleanup(self.unlist)
-
-    @staticmethod
-    def unlist():
-        with contextlib.suppress(FileNotFoundError):
-            os.unlink(engine.LINK_WINDOWS_FILE)
-
-    @staticmethod
-    def list_links(*addresses, version=1):
-        with open(engine.LINK_WINDOWS_FILE, "w") as f:
-            json.dump({"version": version, "windows": list(addresses)}, f)
+    LINK = ("chrome-__home_user_.config_omarchy_plugins_magpie-6ffeab1a32e965d6"
+            "_scripts_link-window.html-Profile_1")
 
     @staticmethod
     def win(address, klass, floating, at=(0, 0), size=(1000, 1000), ws=4):
         return {"class": klass, "title": "Inbox", "address": address, "floating": floating,
                 "at": list(at), "size": list(size), "workspace": {"id": ws}, "mapped": True}
 
-    def test_the_list_is_read_strictly(self):
-        self.assertEqual(engine.link_windows(), frozenset())
-        self.list_links("0xAB", 7, None, "0xcd")
-        self.assertEqual(engine.link_windows(), frozenset({"0xab", "0xcd"}))
-        for bad in ('{"version": true, "windows": ["0x1"]}', '{"version": 2, "windows": ["0x1"]}',
-                    '{"version": 1, "windows": "0x1"}', '["0x1"]', '{"version": 1', ""):
-            with self.subTest(bad=bad):
-                with open(engine.LINK_WINDOWS_FILE, "w") as f:
-                    f.write(bad)
-                self.assertEqual(engine.link_windows(), frozenset())
+    def test_only_a_link_window_carries_the_mark(self):
+        wins = [self.win("0xlink", self.LINK, True),
+                self.win("0xlink2", self.LINK.replace("Profile_1", "Default"), True),
+                self.win("0xmail", self.GMAIL, False),
+                self.win("0xpr", "chrome-github.com__pulls-Default", True),
+                self.win("0xcal", "org.quickshell", False)]
+        self.assertEqual([c["address"] for c in engine.without_links(wins)],
+                         ["0xmail", "0xpr", "0xcal"])
 
     def test_a_floating_link_window_is_never_recorded(self):
-        link = self.win("0xlink", "chrome-github.com__pulls-Default", True, size=(500, 500))
+        link = self.win("0xlink", self.LINK, True, size=(500, 500))
         notes = self.win("0xnotes", "obsidian", True, at=(600, 0), size=(300, 300))
         with mock.patch.object(engine, "on_ws", return_value=[link, notes]):
-            self.assertEqual(engine.floating_on(4), [link, notes])
-            self.list_links("0xlink")
             self.assertEqual(engine.floating_on(4), [notes])
 
     def test_a_tiled_link_window_is_pruned_from_a_recording(self):
         gmail = self.win("0xmail", self.GMAIL, False, size=(500, 1000))
-        link = self.win("0xlink", self.GMAIL, False, at=(510, 0), size=(490, 1000))
-        self.list_links("0xlink")
+        link = self.win("0xlink", self.LINK, False, at=(510, 0), size=(490, 1000))
         with mock.patch.object(engine, "tiled_on", return_value=[gmail, link]), \
              mock.patch.object(engine, "floating_on", return_value=[]), \
              mock.patch.object(engine, "ws_name", return_value="Mail"), \
@@ -401,84 +385,50 @@ class LinkWindows(unittest.TestCase):
         self.assertEqual([w["class"] for w in write.call_args.args[0]["windows"]], [self.GMAIL])
 
     def test_the_cull_never_closes_a_link_window(self):
-        """With close extras and floating windows on (both on when nothing is saved), a
-        floating window of the recorded Gmail class is a stray unless Magpie lists it."""
+        """With close extras and floating windows on (both on when nothing is saved), a floating
+        window the recording does not list is a stray — unless it is a link."""
         gmail = self.win("0xmail", self.GMAIL, False)
-        link = self.win("0xlink", self.GMAIL, True, size=(500, 500))
-        for listed, expect in ((False, ["0xlink"]), (True, [])):
-            with self.subTest(listed=listed):
-                self.list_links("0xlink") if listed else self.unlist()
-                closed = []
-                with mock.patch.object(engine, "on_ws", return_value=[gmail, link]), \
-                     mock.patch.object(engine, "dispatch", side_effect=lambda cmd: closed.append(cmd)), \
-                     mock.patch.object(engine, "wait_until", return_value=True):
-                    engine.close_extras(4, {self.GMAIL: 1})
-                self.assertEqual([a for a in ("0xmail", "0xlink") if any(a in c for c in closed)],
-                                 expect)
+        link = self.win("0xlink", self.LINK, True, size=(500, 500))
+        stray = self.win("0xstray", "obsidian", True, size=(300, 300))
+        closed = []
+        with mock.patch.object(engine, "on_ws", return_value=[gmail, link, stray]), \
+             mock.patch.object(engine, "dispatch", side_effect=lambda cmd: closed.append(cmd)), \
+             mock.patch.object(engine, "wait_until", return_value=True):
+            self.assertEqual(engine.close_extras(4, {self.GMAIL: 1}), 1)
+        self.assertEqual(len(closed), 1)
+        self.assertIn("0xstray", closed[0])
 
-    def test_a_restore_wait_never_takes_a_link_window(self):
-        """After the launch, the link window maps first, with the class the restore is waiting
-        for, and Magpie lists it a poll later. The window taken is the real one that maps after
-        it. (The first read is open_window's own, before the launch.)"""
-        link = self.win("0xlink", self.GMAIL, False)
-        real = self.win("0xmail", self.GMAIL, False)
+    def test_a_wait_for_any_new_window_never_takes_a_link_window(self):
+        """A placeholder's "Open a new terminal" takes the first new window of any class; a link
+        that maps first is passed over for the window that maps after it."""
+        link = self.win("0xlink", self.LINK, False)
+        real = self.win("0xterm", "Alacritty", False)
         polls = []
 
         def clients():
             polls.append(1)
-            if len(polls) == 3:
-                self.list_links("0xlink")
-            return [] if len(polls) == 1 else [link] + ([real] if len(polls) >= 5 else [])
+            return [link] + ([real] if len(polls) >= 3 else [])
 
         with mock.patch.object(engine, "clients", side_effect=clients), \
              mock.patch.object(engine, "on_ws", return_value=[real]), \
-             mock.patch.object(engine, "dispatch"), \
-             mock.patch.object(engine.subprocess, "Popen"):
-            taken = engine.open_window(self.GMAIL, "omarchy-launch-webapp gmail", 4)
-        self.assertEqual(taken["address"], "0xmail")
+             mock.patch.object(engine, "dispatch"):
+            taken = engine.place_new(lambda c: True, 4, 2.0)
+        self.assertEqual(taken["address"], "0xterm")
 
-    def test_the_cull_waits_for_magpie_before_closing(self):
-        """A link that mapped a moment ago is the newest Gmail on the desk and not listed yet;
-        the cull would keep it and close Dave's own Gmail. Magpie lists it while the cull waits,
-        so nothing is closed."""
-        gmail = self.win("0xmail", self.GMAIL, False)
-        link = self.win("0xlink", self.GMAIL, False, at=(510, 0))
-        closed = []
-        with mock.patch.object(engine, "on_ws", return_value=[gmail, link]), \
-             mock.patch.object(engine, "dispatch", side_effect=lambda cmd: closed.append(cmd)), \
-             mock.patch.object(engine, "wait_until", return_value=True), \
-             mock.patch.object(engine.time, "sleep", side_effect=lambda _: self.list_links("0xlink")):
-            self.assertEqual(engine.close_extras(4, {self.GMAIL: 1}), 0)
-        self.assertEqual(closed, [])
-
-    def test_the_cull_closes_only_what_both_readings_call_a_stray(self):
-        """A floating dialog makes the cull wait; meanwhile a Gmail link maps tiled and is listed
-        only later. The second reading alone would keep the link and close Dave's Gmail."""
-        gmail = self.win("0xmail", self.GMAIL, False)
-        dialog = self.win("0xdialog", "obsidian", True, size=(300, 300))
-        link = self.win("0xlink", self.GMAIL, False, at=(510, 0))
-        desk, closed = [gmail, dialog], []
-        with mock.patch.object(engine, "on_ws", side_effect=lambda ws: list(desk)), \
-             mock.patch.object(engine, "dispatch", side_effect=lambda cmd: closed.append(cmd)), \
-             mock.patch.object(engine, "wait_until", return_value=True), \
-             mock.patch.object(engine.time, "sleep", side_effect=lambda _: desk.append(link)):
-            self.assertEqual(engine.close_extras(4, {self.GMAIL: 1}), 1)
-        self.assertEqual(len(closed), 1)
-        self.assertIn("0xdialog", closed[0])
-
-    def restore_mail_desk(self, desk):
-        """Restore a recording of one Gmail window over `desk`; returns (launches, output)."""
+    def test_a_restore_leaves_the_link_and_reopens_gmail(self):
         record = {"workspace": 4, "name": "Mail", "format": 2, "floating": [],
                   "windows": [{"class": self.GMAIL, "title": "Inbox", "launch": None, "after": None,
                                "side": None, "share": None, "at": [0, 0], "size": [1000, 1000]}]}
+        link = self.win("0xlink", self.LINK, True, size=(500, 500))
         real = self.win("0xnew", self.GMAIL, False)
-        out = io.StringIO()
+        dispatched, out = [], io.StringIO()
         with tempfile.TemporaryDirectory(prefix="barbarian-link-restore-") as temporary:
             (pathlib.Path(temporary) / "ws4.json").write_text(json.dumps(record))
             with mock.patch.object(engine, "SNAP_DIR", temporary), \
-                 mock.patch.object(engine, "on_ws", return_value=desk), \
-                 mock.patch.object(engine, "clients", return_value=desk), \
-                 mock.patch.object(engine, "stand_on"), mock.patch.object(engine, "dispatch"), \
+                 mock.patch.object(engine, "on_ws", return_value=[link]), \
+                 mock.patch.object(engine, "clients", return_value=[link]), \
+                 mock.patch.object(engine, "stand_on"), \
+                 mock.patch.object(engine, "dispatch", side_effect=lambda cmd: dispatched.append(cmd)), \
                  mock.patch.object(engine, "wait_until", return_value=True), \
                  mock.patch.object(engine, "default_split_ratio", return_value=1), \
                  mock.patch.object(engine, "set_default_split_ratio"), \
@@ -487,48 +437,76 @@ class LinkWindows(unittest.TestCase):
                  mock.patch.object(engine, "card"), mock.patch.object(engine, "card_down"), \
                  mock.patch.object(engine, "ANNOUNCE", False), contextlib.redirect_stdout(out):
                 engine.restore(4)
-        return [c.args[0] for c in launch.call_args_list], out.getvalue()
+        self.assertEqual(len(launch.call_args_list), 1)
+        self.assertIn("mail.google.com", launch.call_args.args[0])
+        self.assertFalse([c for c in dispatched if "0xlink" in c])
+        self.assertNotIn("closed", out.getvalue())
 
-    def test_a_restore_reopens_gmail_beside_a_listed_link(self):
-        """Without the list the link passes for the recorded Gmail ("already as saved"); with
-        it, the restore opens Gmail."""
-        link = self.win("0xlink", self.GMAIL, False)
-        launches, out = self.restore_mail_desk([link])
-        self.assertEqual(launches, [])
-        self.assertIn("already as saved", out)
-        self.list_links("0xlink")
-        launches, out = self.restore_mail_desk([link])
-        self.assertEqual(len(launches), 1)
-        self.assertIn("mail.google.com", launches[0])
-        self.assertIn("1 opened", out)
+    def old_recording(self, temporary):
+        """A recording made by a Barbarian that did not know the mark: Gmail with a link beside
+        it, and a floating link."""
+        record = {"workspace": 4, "name": "Mail", "format": 2,
+                  "windows": [{"class": self.GMAIL, "title": "Inbox", "launch": None, "after": None,
+                               "side": None, "share": None, "at": [0, 0], "size": [500, 1000]},
+                              {"class": self.LINK, "title": "A link", "launch": None, "after": 0,
+                               "side": "r", "share": 0.5, "at": [510, 0], "size": [490, 1000]}],
+                  "floating": [{"class": self.LINK, "title": "Another", "launch": None,
+                                "at": [100, 100], "size": [400, 400],
+                                "frac": [0.1, 0.1, 0.4, 0.4]}]}
+        path = pathlib.Path(temporary) / "ws4.json"
+        path.write_text(json.dumps(record))
+        return path
+
+    def test_an_old_recording_is_read_without_its_link_windows(self):
+        with tempfile.TemporaryDirectory(prefix="barbarian-link-record-") as temporary:
+            path = self.old_recording(temporary)
+            original = path.read_bytes()
+            record = engine.read_record(str(path))
+            self.assertEqual(path.read_bytes(), original)
+        self.assertEqual([(w["class"], w["after"]) for w in record["windows"]], [(self.GMAIL, None)])
+        self.assertEqual(record["floating"], [])
+
+    def test_an_old_recording_with_a_link_restores_without_a_placeholder(self):
+        gmail = self.win("0xmail", self.GMAIL, False)
+        out = io.StringIO()
+        with tempfile.TemporaryDirectory(prefix="barbarian-link-record-") as temporary:
+            self.old_recording(temporary)
+            with mock.patch.object(engine, "SNAP_DIR", temporary), \
+                 mock.patch.object(engine, "on_ws", return_value=[gmail]), \
+                 mock.patch.object(engine, "clients", return_value=[gmail]), \
+                 mock.patch.object(engine, "open_placeholder") as placeholder, \
+                 mock.patch.object(engine.subprocess, "Popen") as launch, \
+                 mock.patch.object(engine, "card"), mock.patch.object(engine, "card_down"), \
+                 mock.patch.object(engine, "ANNOUNCE", False), contextlib.redirect_stdout(out):
+                self.assertEqual(engine.restore(4), 0)
+        placeholder.assert_not_called()
+        launch.assert_not_called()
+        self.assertIn("already as saved", out.getvalue())
 
     def test_show_does_not_count_a_link_window(self):
-        link = self.win("0xlink", self.GMAIL, False)
+        gmail = self.win("0xmail", self.GMAIL, False)
+        link = self.win("0xlink", self.LINK, True, size=(500, 500))
         record = {"workspace": 4, "name": "Mail", "format": 2, "floating": [],
                   "windows": [{"class": self.GMAIL, "title": "Inbox", "launch": None, "after": None,
                                "side": None, "share": None, "at": [0, 0], "size": [1000, 1000]}]}
-        self.list_links("0xlink")
         out = io.StringIO()
         with tempfile.TemporaryDirectory(prefix="barbarian-link-show-") as temporary:
             (pathlib.Path(temporary) / "ws4.json").write_text(json.dumps(record))
             with mock.patch.object(engine, "SNAP_DIR", temporary), \
-                 mock.patch.object(engine, "on_ws", return_value=[link]), \
+                 mock.patch.object(engine, "on_ws", return_value=[gmail, link]), \
                  contextlib.redirect_stdout(out):
                 engine.show(4)
-        self.assertIn(f"missing: {self.GMAIL}", out.getvalue())
-        self.assertNotIn("not in the recording", out.getvalue())
+        self.assertIn("desk now: as saved", out.getvalue())
 
     def test_the_panel_does_not_offer_a_link_window_as_an_extra(self):
-        link = self.win("0xlink", "chrome-github.com__pulls-Default", True, size=(500, 500))
+        link = self.win("0xlink", self.LINK, True, size=(500, 500))
         stray = self.win("0xstray", "obsidian", True, at=(600, 0), size=(300, 300))
         g = {"w": 1000, "h": 1000, "out": dict.fromkeys(("left", "right", "top", "bottom"), 0),
              "in": dict.fromkeys(("left", "right", "top", "bottom"), 0)}
-        self.list_links("0xlink")
         with tempfile.TemporaryDirectory(prefix="barbarian-link-windows-") as temporary, \
              mock.patch.object(engine, "SNAP_DIR", temporary):
             model = engine.desk_model(4, "Mail", [link, stray], g)
         self.assertEqual([e["class"] for e in model["extra"]], ["obsidian"])
-
 
 if __name__ == "__main__":
     sys.dont_write_bytecode = True

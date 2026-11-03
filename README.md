@@ -128,9 +128,8 @@ window back.
 
 Links that Magpie opens in their own window are left alone. Recording a desk skips them,
 closing extra windows never closes them, and a restore never takes one for a window it is
-reopening, even when the link has the same Chrome window class as a recorded app (a link into
-Gmail, for example). Magpie lists those windows in `$XDG_RUNTIME_DIR/magpie/link-windows.json`;
-without that file, Barbarian treats every window as before.
+reopening. Magpie opens every link through its own `link-window.html` page, so each link
+window's class contains `_link-window.html-`, and that is how Barbarian knows one.
 
 Open **HYPER+L → Features**, or use the **Reptile** switches in Caboodle, to turn behaviors
 on and off independently. Both controls share the same settings. Changes are saved immediately;
