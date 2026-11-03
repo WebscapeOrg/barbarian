@@ -595,6 +595,45 @@ class Install(unittest.TestCase):
         self.run_install()
         self.assertTrue([c for c in self.called("systemctl") if "try-restart" in c])
 
+    def wait_through_an_edit(self, replace, by):
+        """Run a copied installer's waiter; its first lock check rewrites the copy in place."""
+        repo = self.tmp / "repo"
+        for part in ("engine", "plugin"):
+            shutil.copytree(ROOT / part, repo / part, ignore=shutil.ignore_patterns("__pycache__"))
+        script = repo / "install.sh"
+        shutil.copy2(SCRIPT, script)
+        edited = self.tmp / "edited"
+        self.stub("omarchy-shell",
+                  f'if [ -e "{edited}" ]; then echo \'{{"sessionLocked":false}}\'; exit 0; fi\n'
+                  f': > "{edited}"\n'
+                  f'python3 -c \'import sys; p = sys.argv[1]; t = open(p).read()\n'
+                  f'with open(p, "r+") as f: f.write(t.replace(sys.argv[2], sys.argv[3], 1)); f.truncate()\' '
+                  f'"{script}" "$REPLACE" "$BY"\n'
+                  'echo \'{"sessionLocked":true}\'')
+        result = subprocess.run([str(script), "--when-unlocked"], capture_output=True, text=True,
+                                env={"HOME": str(self.home), "PATH": f"{self.bin}:{os.environ['PATH']}",
+                                     "OMARCHY_PATH": str(self.bin), "CALLS": str(self.calls),
+                                     "COUNT": str(self.tmp / "count"), "SHELL_ALIVE": str(self.shell_alive),
+                                     "BARBARIAN_UNINSTALL_SETTLE": "0", "BARBARIAN_UNLOCK_POLL": "1",
+                                     "XDG_RUNTIME_DIR": str(self.runtime),
+                                     "REPLACE": replace, "BY": by}, timeout=60)
+        self.assertTrue(edited.exists(), result.stdout + result.stderr)
+        return result
+
+    def test_the_waiter_runs_the_installer_as_it_is_when_the_wait_ends(self):
+        """A commit during a long wait, written over the same file, is what runs at the unlock."""
+        result = self.wait_through_an_edit("set -u\n", "set -u\necho the-new-installer\n")
+        self.assertIn("the-new-installer", result.stdout, result.stderr)
+        self.assertIn("Panel.qml", self.installed(), result.stdout + result.stderr)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_the_waiter_does_not_run_an_installer_caught_half_edited(self):
+        result = self.wait_through_an_edit("set -u\n", "set -u\nif true; then\n")
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("does not parse", result.stderr)
+        self.assertFalse((self.home / PLUGIN).exists())
+        self.assertFalse(self.called("quickshell"))
+
     def test_the_waiter_installs_once_the_screen_is_free(self):
         result = self.run_install("--when-unlocked")
         self.assertIn("Panel.qml", self.installed())

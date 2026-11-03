@@ -145,6 +145,16 @@ if [ "${1:-}" = "--when-unlocked" ]; then
     waited=$((waited + UNLOCK_POLL))
     HYPRCTL_HUNG=0                       # each poll asks afresh
   done
+  # The wait can last hours, and the installer may have been committed again meanwhile. bash reads
+  # a script as it runs, so carrying on would run the old logic, or, if the file was rewritten in
+  # place, whatever now sits at the old byte offset. Starting it afresh runs the installer as it is
+  # now. The process keeps its PID, so it is still the waiter's unit and arms no second one. A file
+  # caught half edited is not run: it could stop the shell and break before the restart.
+  if ! "$BASH" -n "$HERE/install.sh" 2>/dev/null; then
+    echo "barbarian: install.sh does not parse right now (mid-edit?) — nothing installed; the next commit or run installs it" >&2
+    exit 1
+  fi
+  exec "$BASH" "$HERE/install.sh"
 fi
 
 arm_waiter() {
