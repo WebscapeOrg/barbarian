@@ -123,6 +123,12 @@ Saved layouts can reopen Skylark and Magpie through the shell. Existing Skylark 
 work without saving them again, including recordings made before reopening was supported.
 If Skylark is already open on another workspace, restore brings that window back.
 
+Links that Magpie opens in their own window are left alone. Recording a desk skips them,
+closing extra windows never closes them, and a restore never takes one for a window it is
+reopening, even when the link has the same Chrome window class as a recorded app (a link into
+Gmail, for example). Magpie lists those windows in `$XDG_RUNTIME_DIR/magpie/link-windows.json`;
+without that file, Barbarian treats every window as before.
+
 Open **HYPER+L → Features**, or use the **Reptile** switches in Caboodle, to turn behaviors
 on and off independently. Both controls share the same settings. Changes are saved immediately;
 no shell restart is needed. Saved recordings and quick-app choices are retained.
