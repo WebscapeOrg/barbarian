@@ -203,16 +203,43 @@ for engine in ws-layout quick-app reptile_features.py reptile-feature; do
 done
 
 DEFERRED=0
+WRITE_FAILED=""
 PLUGIN_CHANGED=0
 ENGINE_CHANGED=0
 install_plugin_file() { # <mode> <repo file> <live file>
   local mode="$1" src="$2" dest="$3"
   cmp -s "$src" "$dest" && return 0        # identical — no write, no reload
-  if busy; then
-    DEFERRED=$((DEFERRED + 1))
+  # ⚠️ ONLY WHAT THE SHELL LOADS WAITS FOR A FREE SCREEN (2026-11-03). A file under plugins/
+  # reloads the shell, and the wallpaper watcher is restarted after its write, so those two wait.
+  # The layout engines and the switches' command line are read afresh on every call: nothing
+  # reloads, so they go in under a lock, as the main machine's own installer already puts them in
+  # (omarchy/installs.env). Holding them back left the main machine, locked overnight, on an older
+  # ws-layout than its ships. Two limits: they still wait out a desk renumber, and they wait
+  # with the panel when a panel file is being held back in the same run, because a commit that
+  # changes both halves changes how they talk (9521d30 did), and an old panel must not drive a
+  # new engine.
+  case "$dest" in
+    "$PLUGIN_DIR"/*|"$ENGINE_DST") busy && { DEFERRED=$((DEFERRED + 1)); return 0; } ;;
+    *) if renumbering || { [ "$plugin_write_pending" = 1 ] && busy; }; then
+         DEFERRED=$((DEFERRED + 1))
+         return 0
+       fi ;;
+  esac
+  # The new copy is written beside the old one and renamed over it, so a write that fails part
+  # way (a full disk) leaves the old file whole instead of a truncated one. A failed write is not
+  # held back, since waiting would not fix it; it is reported at the end.
+  # A run killed between the two steps leaves its temp file; the next write here clears any that
+  # are old enough to be no other run's. New folders get 755, as install -D gave them.
+  local dir tmp=""
+  dir="$(dirname "$dest")"
+  [ -d "$dir" ] && find "$dir" -maxdepth 1 -type f -name '.barbarian-install.*' -mmin +10 -delete 2>/dev/null
+  if ! { { [ -d "$dir" ] || install -d "$dir"; } &&
+         tmp="$(mktemp "$dir/.barbarian-install.XXXXXX")" &&
+         install -"$mode" "$src" "$tmp" && mv -fT "$tmp" "$dest"; }; then
+    [ -n "$tmp" ] && rm -f -- "$tmp"
+    WRITE_FAILED="$WRITE_FAILED  $dest"$'\n'
     return 0
   fi
-  install -D"$mode" "$src" "$dest"
   case "$dest" in
     "$PLUGIN_DIR"/*) PLUGIN_CHANGED=1 ;;
     "$ENGINE_DST")   ENGINE_CHANGED=1 ;;
@@ -293,7 +320,10 @@ for f in "${FILES[@]}"; do
 done
 
 SWITCHES_FAILED=0
-if [ "$DEFERRED" = 0 ]; then
+# The switch manifests describe the installed engine, so they follow it: in when it is in, held
+# back while it is (a manifest naming a feature the engine no longer knows breaks its switch).
+if cmp -s "$HERE/engine/reptile-feature" "$HOME/.local/bin/reptile-feature" &&
+   cmp -s "$HERE/engine/reptile_features.py" "$LAYOUT_DST/reptile_features.py"; then
   python3 "$HERE/engine/reptile-feature" install-manifests "$HOME/.config/caboodle/switches" || SWITCHES_FAILED=1
 fi
 
@@ -526,6 +556,8 @@ if [ "$SHELL_STOPPED" = 1 ]; then
   fi
 fi
 
+INSTALLED=installed
+[ -n "$WRITE_FAILED" ] && INSTALLED="installed the files it could write"
 if [ "$DEFERRED" -gt 0 ]; then
   # The screen went up part way through: some files are in, the rest are not. A panel file among
   # the ones that went in is owed a restart the waiter's own run would not know about, because by
@@ -537,20 +569,20 @@ if [ "$DEFERRED" -gt 0 ]; then
   arm_waiter
   echo "barbarian: $DEFERRED file(s) held back — the screen is locked or the panel is open; they go in the moment it clears"
 elif [ "$SHELL_STOPPED" = 1 ]; then
-  echo "barbarian: installed to $PLUGIN_DIR and $ENGINE_DST, $SHELL_NOTE"
+  echo "barbarian: $INSTALLED to $PLUGIN_DIR and $ENGINE_DST, $SHELL_NOTE"
 elif [ "$RESTART_OWED" = 1 ]; then
   if ! busy && restart_shell; then
     rm -f "$RESTART_STAMP"
-    echo "barbarian: installed to $PLUGIN_DIR and $ENGINE_DST, $SHELL_NOTE"
+    echo "barbarian: $INSTALLED to $PLUGIN_DIR and $ENGINE_DST, $SHELL_NOTE"
   else
     # The screen went up between the write and the restart; the waiter finishes the job.
     mkdir -p "$(dirname "$RESTART_STAMP")"
     : > "$RESTART_STAMP"
     arm_waiter
-    echo "barbarian: installed to $PLUGIN_DIR and $ENGINE_DST; the shell restarts when the screen is free"
+    echo "barbarian: $INSTALLED to $PLUGIN_DIR and $ENGINE_DST; the shell restarts when the screen is free"
   fi
 else
-  echo "barbarian: installed to $PLUGIN_DIR and $ENGINE_DST"
+  echo "barbarian: $INSTALLED to $PLUGIN_DIR and $ENGINE_DST"
 fi
 
 # post-commit hook (not tracked by git): a commit touching the plugin, an engine, a hook or this
@@ -560,6 +592,10 @@ if [ -d "$HERE/.git" ]; then
   install -Dm755 "$HERE/hooks/post-commit" "$HERE/.git/hooks/post-commit"
 fi
 
+if [ -n "$WRITE_FAILED" ]; then
+  printf 'barbarian: could not write these files, so they were left as they were:\n%sFix the reported path and run the installer again.\n' "$WRITE_FAILED" >&2
+  exit 1
+fi
 if [ "$SWITCHES_FAILED" = 1 ]; then
   echo "barbarian: Caboodle switches could not be installed; the native Features tab is available. Fix the reported path and run the installer again." >&2
   exit 1

@@ -219,7 +219,12 @@ entry renames in place, the old folder trashes, and the keybind reminder prints.
 
 After installing changed plugin code, run `omarchy restart shell` while the session is
 unlocked. The shell's widget reload can reuse the QML engine's cached code; a full shell
-restart is required to load edits reliably. The installer defers writes while locked.
+restart is required to load edits reliably. While the screen is locked or the panel is
+open, the installer holds back the plugin and the wallpaper watcher and puts them in when
+it clears. The layout engines go in straight away, because nothing reloads them, unless a
+panel change is held back in the same run. Each file is written beside the old one and
+renamed into place, so a file it cannot write keeps its old copy; it is listed at the end
+and the run exits 1.
 
 ## Verify drag behavior
 

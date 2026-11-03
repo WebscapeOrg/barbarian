@@ -13,6 +13,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -289,14 +290,147 @@ class Install(unittest.TestCase):
         self.assertFalse((self.home / PLUGIN).exists())
         self.assertTrue(self.called("systemd-run"))
 
-    def test_a_locked_run_writes_nothing_and_arms_the_waiter(self):
+    def test_a_locked_run_writes_no_plugin_file_and_arms_the_waiter(self):
         self.locked(True)
         result = self.run_install()
         self.assertFalse((self.home / PLUGIN).exists())
+        self.assertFalse((self.home / ".config/omarchy/workspace-backgrounds").exists())
         self.assertFalse(self.called("omarchy-restart-shell"))
         self.assertTrue(self.called("systemd-run"))
         self.assertIn("--when-unlocked", self.called("systemd-run")[0])
         self.assertIn("held back", result.stdout)
+
+    def engines_out_of_date(self):
+        """Everything installed, then the engines alone made older: an engine-only commit."""
+        self.run_install()
+        layout = self.home / ".config/omarchy/workspace-layout"
+        engines = [layout / "ws-layout", layout / "quick-app", layout / "reptile_features.py",
+                   self.home / ".local/bin/reptile-feature"]
+        for engine in engines:
+            engine.write_text("# an older engine\n")
+        self.calls.write_text("")
+        self.shell_alive.touch()       # the first run stopped the stub shell; a real one is back
+        return engines
+
+    def test_an_engine_only_change_goes_in_under_a_lock(self):
+        """Nothing reloads the engines, so a locked night does not leave the machine on old ones."""
+        engines = self.engines_out_of_date()
+        self.locked(True)
+        result = self.run_install()
+        for engine in engines:
+            self.assertNotEqual(engine.read_text(), "# an older engine\n", f"{engine}: {result.stdout}")
+        self.assertFalse(self.called("systemd-run"))
+        self.assertNotIn("held back", result.stdout)
+
+    def test_the_engines_wait_with_a_panel_held_back_in_the_same_run(self):
+        """An old panel must not drive a new engine."""
+        engines = self.engines_out_of_date()
+        (self.home / PLUGIN / "Panel.qml").write_text("// an older panel\n")
+        self.locked(True)
+        self.run_install()
+        for engine in engines:
+            self.assertEqual(engine.read_text(), "# an older engine\n", str(engine))
+        self.assertTrue(self.called("systemd-run"))
+
+    def test_the_layout_engines_wait_out_a_desk_renumber(self):
+        engines = self.engines_out_of_date()
+        self.stub("pgrep", 'case "$*" in *quickshell*)'
+                           ' [ -f "$SHELL_ALIVE" ] && echo 1234 || exit 1 ;;'
+                           ' *"-x Hyprland"*) echo 4321 ;;'
+                           ' *ws-renumber*) echo 777 ;;'
+                           ' *) exit 1 ;; esac')
+        result = self.run_install()
+        self.assertEqual(engines[0].read_text(), "# an older engine\n")
+        self.assertTrue(self.called("systemd-run"), result.stdout)
+
+    def test_the_switch_manifests_follow_the_installed_engine(self):
+        """Held back with the engine, so no switch names a feature the engine does not know."""
+        self.engines_out_of_date()
+        switches = self.home / ".config/caboodle/switches"
+        before = sorted(p.name for p in switches.glob("*")) if switches.exists() else []
+        for manifest in switches.glob("*"):
+            manifest.unlink()
+        self.stub("pgrep", 'case "$*" in *quickshell*)'
+                           ' [ -f "$SHELL_ALIVE" ] && echo 1234 || exit 1 ;;'
+                           ' *"-x Hyprland"*) echo 4321 ;;'
+                           ' *ws-renumber*) echo 777 ;;'
+                           ' *) exit 1 ;; esac')
+        self.run_install()
+        self.assertEqual(sorted(p.name for p in switches.glob("*")), [])
+        self.assertTrue(before, "the first install wrote no switch manifests to compare")
+
+    def test_the_switch_manifests_go_in_with_the_engines_while_the_watcher_waits(self):
+        """The watcher is held back under a lock, the engines are not, so the manifests follow them."""
+        self.engines_out_of_date()
+        (self.home / ".config/omarchy/workspace-backgrounds/per-workspace-wallpaper.sh").write_text(
+            "# an older watcher\n")
+        switches = self.home / ".config/caboodle/switches"
+        for manifest in switches.glob("*"):
+            manifest.unlink()
+        self.locked(True)
+        result = self.run_install()
+        self.assertTrue(list(switches.glob("*")), result.stdout + result.stderr)
+        self.assertIn("held back", result.stdout)
+
+    def test_a_file_that_cannot_be_written_is_reported_not_skipped(self):
+        engines = self.engines_out_of_date()
+        bin_dir = self.home / ".local/bin"
+        switches = self.home / ".config/caboodle/switches"
+        for manifest in switches.glob("*"):
+            manifest.unlink()
+        bin_dir.chmod(0o555)
+        try:
+            result = self.run_install()
+        finally:
+            bin_dir.chmod(0o755)
+        self.assertEqual(result.returncode, 1, result.stdout)
+        report = result.stderr.split("could not write these files", 1)
+        self.assertEqual(len(report), 2, result.stderr)
+        self.assertIn(str(bin_dir / "reptile-feature"), report[1])
+        self.assertNotIn(str(engines[0]), report[1])
+        self.assertIn("installed the files it could write", result.stdout)
+        self.assertEqual(engines[3].read_text(), "# an older engine\n")
+        self.assertEqual(engines[0].read_text(), (ROOT / "engine/ws-layout").read_text())
+        self.assertEqual(list(switches.glob("*")), [])
+        self.assertFalse(self.called("systemd-run"))
+
+    def test_a_write_that_fails_part_way_leaves_the_old_file_whole(self):
+        """A full disk mid-copy must not leave a truncated engine where a working one was."""
+        engines = self.engines_out_of_date()
+        self.stub("install", 'case "$2" in */engine/ws-layout) head -c 100 "$2" > "$3"; exit 1 ;; esac\n'
+                             'exec /usr/bin/install "$@"')
+        result = self.run_install()
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertEqual(engines[0].read_text(), "# an older engine\n")
+        self.assertEqual([p.name for p in engines[0].parent.glob(".barbarian-install.*")], [])
+        self.assertEqual(engines[1].read_text(), (ROOT / "engine/quick-app").read_text())
+
+    def test_a_folder_where_a_file_belongs_is_reported(self):
+        engines = self.engines_out_of_date()
+        engines[3].unlink()
+        engines[3].mkdir()
+        result = self.run_install()
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        report = result.stderr.split("could not write these files", 1)
+        self.assertEqual(len(report), 2, result.stderr)
+        self.assertIn(str(engines[3]), report[1])
+        self.assertEqual(list(engines[3].iterdir()), [])
+        self.assertEqual([p.name for p in engines[3].parent.glob(".barbarian-install.*")], [])
+
+    def test_old_temp_files_are_cleared_and_folder_modes_kept(self):
+        engines = self.engines_out_of_date()
+        layout = engines[0].parent
+        stale, fresh = layout / ".barbarian-install.AAAAAA", layout / ".barbarian-install.BBBBBB"
+        stale.write_text("left by a killed run\n")
+        fresh.write_text("another run's, still being written\n")
+        hour_ago = time.time() - 3600
+        os.utime(stale, (hour_ago, hour_ago))
+        layout.chmod(0o700)
+        result = self.run_install()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse(stale.exists())
+        self.assertTrue(fresh.exists())
+        self.assertEqual(layout.stat().st_mode & 0o777, 0o700)
 
     def test_the_panel_on_screen_counts_as_busy(self):
         self.stub("hyprctl", 'echo \'[{"namespace": "omarchy-keyboard-panel"}]\'')
