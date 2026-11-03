@@ -168,7 +168,9 @@ one. The `reptile-feature status|on|off <name>` adapter supplies Caboodle's swit
   model, riding the same IPC target.
   On close it writes the new order straight into Omarchy's `shell.json` (whole
   entries move, so each widget's per-widget settings travel with it) and parks
-  hidden widget ids in `~/.config/omarchy/bar-hidden.json`.
+  hidden widget ids in `~/.config/omarchy/bar-hidden.json`. The installer keeps a short list of
+  plugins that changed their id (so far only Skylark, now `magpie-calendar`) and renames their
+  hidden entries to match, so showing one again brings back the renamed plugin.
   Its `bin/` scripts drive the per-desk wallpaper picker: pin any image (or a solid
   colour) to a desk, add images from Pictures/Downloads, remove ones you added, and
   hide the theme's own (listed per theme in `workspace-backgrounds/<theme>/hidden-images`).

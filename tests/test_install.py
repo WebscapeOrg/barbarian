@@ -132,6 +132,95 @@ class Install(unittest.TestCase):
                          [{"index": 0, "entry": {"id": "atlas.arrange"}}])
         self.assertIn("went to the trash", result.stdout)
 
+    def write_bar(self, right, hidden):
+        shell = self.home / ".config/omarchy/shell.json"
+        shell.parent.mkdir(parents=True, exist_ok=True)
+        shell.write_text(json.dumps({"bar": {"layout": {"left": [], "center": [],
+                                                        "right": right}}}) + "\n")
+        sidecar = self.home / ".config/omarchy/bar-hidden.json"
+        sidecar.write_text(json.dumps(hidden) + "\n")
+        return shell, sidecar
+
+    def test_a_widget_hidden_under_an_old_name_takes_the_new_one(self):
+        """#7371: Skylark became Magpie Calendar. Its hidden entry keeps its spot and settings,
+        and the entry on the bar is left for the calendar's own installer to rename."""
+        shell, sidecar = self.write_bar(
+            [{"id": "skylark"}, {"id": "omarchy.clock"}],
+            {"left": [], "center": [],
+             "right": [{"index": 0, "entry": {"id": "crmne.omacal"}},
+                       {"index": 3, "entry": {"id": "skylark", "colour": "blue"}}]})
+        before = shell.read_text()
+        result = self.run_install()
+        self.assertEqual(json.loads(sidecar.read_text())["right"],
+                         [{"index": 0, "entry": {"id": "crmne.omacal"}},
+                          {"index": 3, "entry": {"id": "magpie-calendar", "colour": "blue"}}],
+                         result.stdout + result.stderr)
+        self.assertEqual(shell.read_text(), before)
+        self.assertIn("now carries the new one", result.stdout)
+
+    def test_an_old_name_already_hidden_under_its_new_one_is_a_twin(self):
+        """The twin is found across lanes, whichever of the two comes first."""
+        _, sidecar = self.write_bar(
+            [{"id": "omarchy.clock"}],
+            {"left": [{"index": 1, "entry": {"id": "skylark"}}], "center": [],
+             "right": [{"index": 0, "entry": {"id": "magpie-calendar"}}]})
+        result = self.run_install()
+        self.assertEqual(json.loads(sidecar.read_text()),
+                         {"left": [], "center": [],
+                          "right": [{"index": 0, "entry": {"id": "magpie-calendar"}}]})
+        self.assertIn("is now listed once", result.stdout)
+        self.assertNotIn("now carries the new one", result.stdout)
+
+    def test_two_entries_hidden_under_the_old_name_leave_one(self):
+        _, sidecar = self.write_bar(
+            [], {"left": [{"index": 0, "entry": {"id": "skylark"}}], "center": [],
+                 "right": [{"index": 2, "entry": {"id": "skylark"}}]})
+        self.run_install()
+        self.assertEqual(json.loads(sidecar.read_text()),
+                         {"left": [{"index": 0, "entry": {"id": "magpie-calendar"}}],
+                          "center": [], "right": []})
+
+    def test_the_rename_lands_while_the_screen_is_locked(self):
+        """Only the panel reads the sidecar, so the lock is no reason to wait."""
+        _, sidecar = self.write_bar([], {"right": [{"index": 0, "entry": {"id": "skylark"}}]})
+        self.locked(True)
+        self.run_install()
+        self.assertEqual(json.loads(sidecar.read_text()),
+                         {"right": [{"index": 0, "entry": {"id": "magpie-calendar"}}]})
+
+    def test_the_rename_waits_for_the_panel_to_close(self):
+        """An open panel holds the old id and would write it back when it closes, so nothing is
+        written and the waiter is armed, even when every plugin file is already in."""
+        self.run_install()
+        self.calls.write_text("")
+        _, sidecar = self.write_bar([], {"right": [{"index": 0, "entry": {"id": "skylark"}}]})
+        before = sidecar.read_text()
+        self.stub("hyprctl", 'echo \'[{"namespace": "omarchy-keyboard-panel"}]\'')
+        result = self.run_install()
+        self.assertEqual(sidecar.read_text(), before)
+        self.assertTrue(self.called("systemd-run"), result.stdout + result.stderr)
+        self.assertIn("waits for the panel to close", result.stdout)
+
+    def test_a_sidecar_with_nothing_renamed_is_not_rewritten(self):
+        _, sidecar = self.write_bar([], {"right": [{"index": 0, "entry": {"id": "crmne.omacal"}}]})
+        before = sidecar.read_text()
+        self.run_install()
+        self.assertEqual(sidecar.read_text(), before)
+
+    def test_no_sidecar_is_no_sidecar_afterwards(self):
+        result = self.run_install()
+        self.assertFalse((self.home / ".config/omarchy/bar-hidden.json").exists())
+        self.assertNotIn("Traceback", result.stderr)
+
+    def test_a_sidecar_in_another_shape_is_left_alone_and_the_install_goes_on(self):
+        _, sidecar = self.write_bar([], ["not", "the", "shape"])
+        before = sidecar.read_text()
+        result = self.run_install()
+        self.assertEqual(sidecar.read_text(), before)
+        self.assertNotIn("Traceback", result.stderr)
+        self.assertIn("left as it is", result.stdout)
+        self.assertIn("Panel.qml", self.installed())
+
     def test_the_arrange_migration_reminds_while_the_keybind_still_names_the_old_id(self):
         (self.home / ".config/omarchy/plugins/tinkerbell.arrange").mkdir(parents=True)
         (self.home / ".config/omarchy/plugins/tinkerbell.arrange/manifest.json").write_text("{}\n")
