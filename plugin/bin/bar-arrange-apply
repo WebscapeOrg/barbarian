@@ -32,7 +32,10 @@
 set -euo pipefail
 exec 9>"$HOME/.config/omarchy/.bar-arrange-apply.lock"
 flock 9
-python3 - "$@" <<'PY'
+# exec, so a caller that kills only the process it started (Python's subprocess timeout does)
+# stops the one doing the work, not a parent that leaves its child writing (hobnob #7403). The
+# lock stays held on fd 9.
+exec python3 - "$@" <<'PY'
 import json, os, sys, tempfile
 
 path = os.path.expanduser("~/.config/omarchy/shell.json")
