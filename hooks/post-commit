@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # post-commit — a commit is the finished signal, so a commit that touched the plugin, the engine,
 # a hook or the installer installs itself (Dave, 2026-09-21: "Please auto update always upon
-# unlock"). install.sh writes no plugin file while the screen is locked or Barbarian's panel is
-# open (only its own hidden-widget list may change under a lock, since the shell never reads it),
-# and arms a waiter that finishes the job the moment that clears, so this is safe at any hour.
+# unlock"). install.sh writes nothing the shell loads while the screen is locked or Barbarian's
+# panel is open (the layout engines and its own hidden-widget list may change under a lock, since
+# nothing reloads them), and arms a waiter that finishes the job the moment that clears, so this
+# is safe at any hour.
 #
 # On the machine that owns the mirror ships the same commit also goes to them (voyager, ds9)
 # through the machine repo's ship-sync service, which rsyncs this repo alongside
