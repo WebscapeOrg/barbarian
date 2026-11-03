@@ -277,6 +277,7 @@ PLACEHOLDER_TITLE = re.compile(r"^Barbarian · missing (\S+) · ([0-9a-f]{6})(?:
 # window when it is closed and leave it be when it is open.
 SUMMONS = {
     "🐦 Magpie": "omarchy-shell shell summon magpie '{}'",
+    "Skylark": "omarchy-shell shell summon skylark '{}'",
 }
 
 
@@ -288,6 +289,12 @@ def summons_title(win):
     if win.get("class") != PLACEHOLDER_CLASS:
         return None
     return next((p for p in SUMMONS if win.get("title", "").startswith(p)), None)
+
+
+def app_identity(win):
+    return summons_title(win) or win["class"]
+
+
 # The panel puts a placeholder up in well under a second; this only stops a panel too old to
 # know about placeholders from holding the restore up.
 PLACEHOLDER_TIMEOUT = 5.0
@@ -535,20 +542,21 @@ def describe(steps):
 #
 # ⚠️ A DIALOG IS NOT A WINDOW OF ITS OWN. Hyprland reports no parent for one, so a print dialog
 # and a "Save changes?" box look exactly like a small floating window of the app. The rule: a
-# floating window whose class already has a TILED window on this desk is that window's dialog and
-# is left out. A dialog for an app that is NOT tiled here is still recorded — there is nothing to
+# floating window whose app already has a TILED window on this desk is that window's dialog and
+# is left out. Shell apps are identified by their title as well as their shared class. A dialog
+# for an app that is NOT tiled here is still recorded — there is nothing to
 # tell them apart — and restoring it opens the app, not the dialog.
 FLOAT_TOLERANCE = 0.02      # of the screen; a window moved by hand inside this is left alone
 
 
 def floating_on(ws):
     """The floating windows a recording may hold: no dialogs, no seats, no quick-app guests."""
-    tiled = {c["class"] for c in tiled_on(ws)}
+    tiled = {app_identity(c) for c in tiled_on(ws)}
     # A placeholder standing in for a floating window is read as that window (`clients`), so it
     # belongs in this list: the next restore finds its place kept rather than making a second one.
     return by_position([c for c in on_ws(ws)
                         if c["floating"] and c.get("mapped", True)
-                        and c["class"] not in tiled and not never_close(c["class"])])
+                        and app_identity(c) not in tiled and not never_close(c["class"])])
 
 
 def float_record(c, ws, g):
@@ -779,7 +787,7 @@ def close_extras(ws, need):
     restore_floating = features.enabled("floating_windows")
     have = {}
     for c in on_ws(ws):
-        have.setdefault(summons_title(c) or c["class"], []).append(c)
+        have.setdefault(app_identity(c), []).append(c)
     closing = []
     for klass, windows in have.items():
         if never_close(windows[0]["class"]):
@@ -906,7 +914,7 @@ def is_tiled(addr, ws):
 
 
 def open_window(klass, cmd, ws, floating=False):
-    """Launch, then wait for the window it produces. Returns the client, or None on timeout.
+    """Recover an open shell app or launch a missing window. Returns the client, or None on timeout.
     A Quickshell summon is matched by title as well as class: the class alone is the whole
     shell's, so any other Quickshell client appearing in the same moment would do."""
     if not features.enabled("open_apps"):
@@ -914,7 +922,14 @@ def open_window(klass, cmd, ws, floating=False):
     title = None
     if klass == PLACEHOLDER_CLASS:
         title = next((p for p in SUMMONS if cmd == SUMMONS[p]), None)
-    before = {c["address"] for c in clients()
+    live = clients()
+    if title:
+        existing = next((c for c in live if c["class"] == klass and c["title"].startswith(title)
+                         and c.get("mapped", True) and not c.get("placeholder")), None)
+        if existing:
+            return place_new(lambda c: c["address"] == existing["address"], ws, OPEN_TIMEOUT,
+                             floating=floating)
+    before = {c["address"] for c in live
               if c["class"] == klass and (title is None or c["title"].startswith(title))}
     subprocess.Popen(f"setsid {cmd} >/dev/null 2>&1 &", shell=True)
     def appeared(c):
@@ -1239,8 +1254,8 @@ def _restore(ws, name, steps, floats, desk, say):
     # 1. Close anything the recording does not have — never a seat's terminal. A recorded
     #    floating window counts towards what the desk may keep, or closing would undo the
     #    placing that follows.
-    need = Counter(summons_title(s["win"]) or s["win"]["class"] for s in steps) \
-        + Counter(summons_title(f) or f["class"] for f in floats)
+    need = Counter(app_identity(s["win"]) for s in steps) \
+        + Counter(app_identity(f) for f in floats)
     closed = close_extras(ws, need)
     if closed:
         say()
@@ -1805,9 +1820,9 @@ def desk_model(ws, name, all_clients, g):
     live = [c for c in on_desk if not c["floating"]]
     assigned = assign(steps, live)
     floats = (record or {}).get("floating") or []
-    tiled_classes = {c["class"] for c in live}
+    tiled_apps = {app_identity(c) for c in live}
     live_floats = by_position([c for c in on_desk if c["floating"] and c.get("mapped", True)
-                               and c["class"] not in tiled_classes and not never_close(c["class"])])
+                               and app_identity(c) not in tiled_apps and not never_close(c["class"])])
     float_found = match_floats(floats, live_floats)
     windows, splits = [], []
     for i, s in enumerate(steps):
