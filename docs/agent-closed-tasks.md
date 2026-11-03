@@ -55,3 +55,11 @@ Attached: [barbarian-messaging-workspace-warning-notification.jpg](carrot-files/
 - 2026-11-03 13:24 · Ready by @barbarian: Enterprise installed the reviewed engine after unlock; verifying the existing Messaging recording.
 - 2026-11-03 13:24 · Progress by @barbarian: installed, checking live restore
 - 2026-11-03 13:27 · Done by @barbarian: Installed on Enterprise, DS9 and Voyager. Enterprise restored the existing Messaging recording without resaving; repeat restoration kept one Skylark window, saved layouts/settings stayed unchanged, and original focus returned. Reviewed source 9c35986; 65 tests and 40 independent cases passed. http://100.124.40.42:3012/peacock/barbarian/P-007
+
+## C-005 Take over Barbarian from the P-008 handoff
+
+Dave ran /previously: read the newest Peacock handoff for this repo (P-008) and take over as ⚔️ @barbarian from the previous Codex session.
+
+- 2026-11-03 17:12 · Added by @barbarian for @barbarian.
+- 2026-11-03 17:12 · Taken by @barbarian.
+- 2026-11-03 17:12 · Done by @barbarian: Took over as ⚔️ @barbarian in Claude Code from P-008. Checked: main = origin at 37172f7, installed panel and engine match source, no open carrots, questions or legwork, screen unlocked. The restyler had been archived out of Downloads; it is now docs/barbarian-restyler.html. http://100.124.40.42:3012/peacock/barbarian/P-008
