@@ -97,39 +97,18 @@ def never_close(klass):
     return any(klass.startswith(p) for p in quick_app_prefixes())
 
 
-# ⚠️ A LINK MAGPIE OPENED IS A GUEST TOO (Magpie's C-047, 2026-11-03, agreed on hobnob #7314). A
-# link clicked in a message opens as a floating Chrome app window whose class comes from the
-# link's address and the mailbox's Chrome profile — so a link into Gmail itself carries exactly
-# the class of Dave's recorded Gmail window. Magpie lists the windows it opened, by address only,
-# in this file (atomic writes; addresses mean nothing after a logout, hence the runtime folder).
-# Barbarian never records one, never closes one, and never takes one for a recorded window — not
-# on a desk, and not as the new window a restore is waiting for. A missing or unreadable file
-# lists nothing, which is how things were before Magpie kept it.
-LINK_WINDOWS_FILE = os.path.join(os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}",
-                                 "magpie/link-windows.json")
-# Magpie lists a new window within about 50 ms of seeing it map, and a busy Chrome launch can
-# stretch that. So a launch wait takes a new window only once it has been mapped this long and is
-# still not on the list, and the cull reads the list again this long after deciding what to close.
-NEW_WINDOW_SETTLE = 0.4
-
-
-def link_windows():
-    """The addresses of the link windows Magpie has open, or an empty set."""
-    try:
-        with open(LINK_WINDOWS_FILE) as f:
-            listed = json.load(f)
-    except (OSError, ValueError, RecursionError):
-        return frozenset()
-    version = listed.get("version") if isinstance(listed, dict) else None
-    windows = listed.get("windows") if isinstance(listed, dict) else None
-    if type(version) is not int or version != 1 or not isinstance(windows, list):
-        return frozenset()
-    return frozenset(a.lower() for a in windows if isinstance(a, str))
+# ⚠️ A LINK MAGPIE OPENED IS A GUEST TOO (Magpie's C-047, 2026-11-03, hobnob #7354). A link
+# clicked in a message opens as a floating Chrome app window. Magpie opens every one through its
+# own local page, scripts/link-window.html, and Chrome names the window after that page and keeps
+# the name once the page forwards to the link — so every link window's class carries this mark,
+# from the moment it maps, and no other window's does. Barbarian never records one, never closes
+# one, and never takes one for a recorded window or for the window a restore is waiting for.
+LINK_WINDOW_MARK = "_link-window.html-"
 
 
 def without_links(wins):
-    links = link_windows()
-    return [c for c in wins if c["address"].lower() not in links]
+    return [c for c in wins if LINK_WINDOW_MARK not in c["class"]]
+
 
 # How to put a window back when the recording has one and the desk does not. Keyed by window class.
 # A class missing from here is still recorded; it simply cannot be re-opened, and restore says so
@@ -836,32 +815,19 @@ def close_extras(ws, need):
     if not features.enabled("close_extras"):
         return 0
     restore_floating = features.enabled("floating_windows")
-
-    def strays():
-        have = {}
-        for c in without_links(on_ws(ws)):
-            have.setdefault(app_identity(c), []).append(c)
-        found = []
-        for klass, windows in have.items():
-            if never_close(windows[0]["class"]):
-                continue
-            windows = ([c for c in windows if c.get("placeholder")]
-                       + [c for c in windows if c["floating"] and not c.get("placeholder")]
-                       + [c for c in windows if not c["floating"] and not c.get("placeholder")])
-            found += [c for c in windows[: max(0, len(windows) - need.get(klass, 0))]
-                      if not c["floating"] or restore_floating]
-        return found
-
-    # A link Magpie opened a moment ago may not be on its list yet, and as the newest window of
-    # its class it would be the one kept — and the recorded window closed in its place. So the
-    # decision is made twice, the second time once Magpie has had time to list it, and only what
-    # both readings call a stray is closed: a window that maps or settles in between waits for the
-    # next cull rather than changing which copy this one keeps.
+    have = {}
+    for c in without_links(on_ws(ws)):
+        have.setdefault(app_identity(c), []).append(c)
     closing = []
-    first = {c["address"] for c in strays()}
-    if first:
-        time.sleep(NEW_WINDOW_SETTLE)
-        for c in [c for c in strays() if c["address"] in first]:
+    for klass, windows in have.items():
+        if never_close(windows[0]["class"]):
+            continue
+        windows = ([c for c in windows if c.get("placeholder")]
+                   + [c for c in windows if c["floating"] and not c.get("placeholder")]
+                   + [c for c in windows if not c["floating"] and not c.get("placeholder")])
+        for c in windows[: max(0, len(windows) - need.get(klass, 0))]:
+            if c["floating"] and not restore_floating:
+                continue
             dispatch(f'hl.dsp.window.close({{ window = "address:{c["address"]}" }})')
             closing.append(c["address"])
     if closing:
@@ -996,7 +962,7 @@ def open_window(klass, cmd, ws, floating=False):
                          and c.get("mapped", True) and not c.get("placeholder")), None)
         if existing:
             return place_new(lambda c: c["address"] == existing["address"], ws, OPEN_TIMEOUT,
-                             floating=floating, settle=0)
+                             floating=floating)
     before = {c["address"] for c in live if is_app(c)}
     subprocess.Popen(f"setsid {cmd} >/dev/null 2>&1 &", shell=True)
     def appeared(c):
@@ -1040,7 +1006,7 @@ def open_placeholder(ws, win, floating=False):
         "actions": actions,
     }))
     return place_new(lambda c: c.get("placeholder") == token, ws, PLACEHOLDER_TIMEOUT,
-                     floating=floating, settle=0)
+                     floating=floating)
 
 
 # ---------------------------------------------------------------- terminals
@@ -1160,22 +1126,17 @@ def terminal_record(win):
             "said": f"offer to run {shown} in {where} again"}
 
 
-def place_new(is_it, ws, timeout, floating=False, settle=None):
+def place_new(is_it, ws, timeout, floating=False):
     """Wait for the first client `is_it` accepts, then put it on `ws` — tiled, or left floating
     for a window a recording holds as floating (`restore_floats` then places it). None on
-    timeout. A link window Magpie opened is never taken, and a new window is only taken once it
-    has been up `settle` seconds — long enough for Magpie to list it if it is one. A window found
-    by its address or a placeholder's token cannot be a link window and needs no settle."""
-    settle = NEW_WINDOW_SETTLE if settle is None else settle
-    found, first_seen = [], {}
+    timeout. A link window Magpie opened is never taken."""
+    found = []
 
     def mapped():
-        now = time.monotonic()
         for c in without_links(clients()):
             if is_it(c) and c.get("mapped", True):
-                if now - first_seen.setdefault(c["address"], now) >= settle:
-                    found.append(c)
-                    return True
+                found.append(c)
+                return True
         return False
 
     if not wait_until(mapped, timeout):
@@ -1267,9 +1228,28 @@ def stand_on(ws):
 def read_record(path):
     try:
         with open(path) as stream:
-            return json.load(stream)
+            return without_recorded_links(json.load(stream))
     except FileNotFoundError:
         return None
+
+
+def without_recorded_links(record):
+    """The recording as if no link window had been on the desk when it was made. A recording
+    taken before this engine knew Magpie's mark may hold one, and every restore would otherwise
+    miss it and put a placeholder up in its place. The file itself is left as it is."""
+    def is_link(win):
+        return LINK_WINDOW_MARK in str(win.get("class", ""))
+
+    floats = record.get("floating") or []
+    if not any(is_link(w) for w in (record.get("windows") or []) + floats):
+        return record
+    tree = tree_from_steps(steps_of(record))
+    tree = prune(tree, lambda w: not is_link(w)) if tree else None
+    windows = [{**s["win"], "after": s["after"], "side": s["side"],
+                "share": round(s["share"], 3) if s.get("share") is not None else None}
+               for s in (steps_from_tree(tree) if tree else [])]
+    return {**record, "format": 2, "windows": windows,
+            "floating": [f for f in floats if not is_link(f)]}
 
 
 def can_reopen(win, ws):
