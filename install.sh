@@ -402,9 +402,13 @@ fi
 # order of the two installs ends the same. An old entry whose new id is already hidden is a twin,
 # and goes. Only the panel reads this file (the shell never does), so a locked screen is no
 # reason to wait; a panel on screen is, since it would write the old id back when it closes —
-# so then nothing is written, and the waiter does it once the panel has closed.
+# so then nothing is written, and the waiter does it once the panel has closed. It takes
+# bar-arrange-apply's lock, like every other writer of the bar's two files.
 PANEL_OPEN=0
 panel_open && PANEL_OPEN=1
+mkdir -p "$HOME/.config/omarchy"
+(
+flock 9
 PANEL_OPEN="$PANEL_OPEN" python3 - <<'PY'
 import json, os, sys, tempfile
 
@@ -460,6 +464,7 @@ if renamed:
 if twins:
     print("barbarian: a hidden widget listed under both its old and new names is now listed once")
 PY
+) 9>"$HOME/.config/omarchy/.bar-arrange-apply.lock"
 if [ "$?" = 3 ]; then
   arm_waiter
   echo "barbarian: a hidden widget's renamed id waits for the panel to close"

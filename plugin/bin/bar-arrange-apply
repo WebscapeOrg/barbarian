@@ -24,7 +24,14 @@
 #
 # Refuses rather than guesses: an argument that names no current entry (any lane or the
 # sidecar), or names one twice, aborts with both files unchanged.
+#
+# ⚠️ ONE WRITER AT A TIME (2026-11-03). The panel is not the only caller: another plugin's
+# uninstaller sends DEL:<its id> (Magpie Calendar's, hobnob #7398). Each run reads both files and
+# writes them back, so two runs at once would let the later one put back what the earlier took
+# out. A lock beside the files makes the second run wait its turn and read what the first wrote.
 set -euo pipefail
+exec 9>"$HOME/.config/omarchy/.bar-arrange-apply.lock"
+flock 9
 python3 - "$@" <<'PY'
 import json, os, sys, tempfile
 
