@@ -119,6 +119,10 @@ keeps in line.
 
 ## Reptile features
 
+Saved layouts can reopen Skylark and Magpie through the shell. Existing Skylark recordings
+work without saving them again, including recordings made before reopening was supported.
+If Skylark is already open on another workspace, restore brings that window back.
+
 Open **HYPER+L → Features**, or use the **Reptile** switches in Caboodle, to turn behaviors
 on and off independently. Both controls share the same settings. Changes are saved immediately;
 no shell restart is needed. Saved recordings and quick-app choices are retained.

@@ -8,7 +8,10 @@ importing it runs no command (everything subprocess-shaped happens inside functi
 only by the real commands). Nothing here touches the shell, the bar or any live file.
 """
 import importlib.util
+import contextlib
 from importlib.machinery import SourceFileLoader
+import io
+import json
 import os
 import pathlib
 import sys
@@ -46,6 +49,13 @@ class Summons(unittest.TestCase):
         self.assertEqual(engine.launcher_for_win(win, 3),
                          "omarchy-shell shell summon magpie '{}'")
 
+    def test_skylark_is_summoned_without_toggling_it_closed(self):
+        for title in ("Skylark", "Skylark — Calendar"):
+            with self.subTest(title=title):
+                win = {"class": "org.quickshell", "title": title}
+                self.assertEqual(engine.launcher_for_win(win, 4),
+                                 "omarchy-shell shell summon skylark '{}'")
+
     def test_another_quickshell_window_is_not_grabbed(self):
         """The class is the whole shell's; only the titled plugin may be claimed."""
         win = {"class": "org.quickshell", "title": "Holodeck"}
@@ -80,13 +90,17 @@ class WindowIdentity(unittest.TestCase):
                 "at": [0, 0], "size": [100, 100], "floating": False}
 
     def test_existing_shell_windows_never_fill_another_plugin_recording(self):
-        for recorded, actual in [("🐦 Magpie", "Holodeck"), ("Holodeck", "🐦 Magpie")]:
+        for recorded, actual in [("🐦 Magpie", "Holodeck"), ("Holodeck", "🐦 Magpie"),
+                                 ("Skylark", "🐦 Magpie"), ("🐦 Magpie", "Skylark"),
+                                 ("Skylark", "Holodeck"), ("Holodeck", "Skylark")]:
             with self.subTest(recorded=recorded, actual=actual):
                 self.assertEqual(engine.assign([{"win": self.win(recorded)}],
                                                [self.win(actual)]), {})
 
     def test_floating_shell_windows_never_fill_another_plugin_recording(self):
-        for recorded, actual in [("🐦 Magpie", "Holodeck"), ("Holodeck", "🐦 Magpie")]:
+        for recorded, actual in [("🐦 Magpie", "Holodeck"), ("Holodeck", "🐦 Magpie"),
+                                 ("Skylark", "🐦 Magpie"), ("🐦 Magpie", "Skylark"),
+                                 ("Skylark", "Holodeck"), ("Holodeck", "Skylark")]:
             with self.subTest(recorded=recorded, actual=actual):
                 self.assertEqual(engine.match_floats([self.win(recorded)],
                                                      [self.win(actual)]), {})
@@ -191,6 +205,92 @@ class Forget(unittest.TestCase):
                                       "placeholder": "ab12cd"},
                                      [self.window("foot", "another command")])
         self.assertEqual(written["rec"]["windows"], [])
+
+
+class SkylarkRestoration(unittest.TestCase):
+    def setUp(self):
+        self.window = {"class": "org.quickshell", "title": "Skylark", "address": "0xcal",
+                       "at": [12, 40], "size": [800, 800], "floating": False}
+
+    def test_recording_skylark_saves_a_launcher_without_the_warning(self):
+        with mock.patch.object(engine, "tiled_on", return_value=[self.window]), \
+             mock.patch.object(engine, "floating_on", return_value=[]), \
+             mock.patch.object(engine, "ws_name", return_value="Messaging"), \
+             mock.patch.object(engine, "write_record") as write, \
+             mock.patch.object(engine, "ANNOUNCE", True), \
+             mock.patch.object(engine, "card") as card, \
+             mock.patch.object(engine, "card_down"), contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(engine.take_snapshot(4), 0)
+        saved = write.call_args.args[0]["windows"][0]
+        self.assertEqual(saved["launch"], "omarchy-shell shell summon skylark '{}'")
+        self.assertNotIn("cannot reopen", card.call_args.args[0])
+
+    def test_an_old_null_launcher_recording_restores_without_resaving(self):
+        record = {"workspace": 4, "name": "Messaging", "format": 2, "floating": [],
+                  "windows": [{**self.window, "launch": None, "after": None,
+                               "side": None, "share": None}]}
+        with tempfile.TemporaryDirectory(prefix="barbarian-skylark-record-") as temporary:
+            path = pathlib.Path(temporary) / "ws4.json"
+            original = json.dumps(record).encode()
+            path.write_bytes(original)
+            with mock.patch.object(engine, "SNAP_DIR", temporary), \
+                 mock.patch.object(engine, "on_ws", return_value=[]), \
+                 mock.patch.object(engine, "clients", return_value=[]), \
+                 mock.patch.object(engine, "stand_on"), \
+                 mock.patch.object(engine, "default_split_ratio", return_value=1), \
+                 mock.patch.object(engine, "set_default_split_ratio"), \
+                 mock.patch.object(engine, "dispatch"), \
+                 mock.patch.object(engine, "place_new", return_value=self.window), \
+                 mock.patch.object(engine.subprocess, "Popen") as launch, \
+                 mock.patch.object(engine, "card"), mock.patch.object(engine, "card_down"), \
+                 mock.patch.object(engine, "ANNOUNCE", False), \
+                 contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(engine.restore(4), 0)
+            self.assertIn("omarchy-shell shell summon skylark '{}'", launch.call_args.args[0])
+            self.assertEqual(path.read_bytes(), original)
+
+    def test_a_new_unrelated_shell_window_cannot_be_taken_for_skylark(self):
+        def place(predicate, ws, timeout, floating=False):
+            self.assertFalse(predicate({**self.window, "title": "🐦 Magpie"}))
+            self.assertFalse(predicate({**self.window, "title": "Holodeck"}))
+            self.assertFalse(predicate({**self.window, "class": "foot"}))
+            self.assertTrue(predicate(self.window))
+            return self.window
+
+        with mock.patch.object(engine, "clients", return_value=[]), \
+             mock.patch.object(engine.subprocess, "Popen"), \
+             mock.patch.object(engine, "place_new", side_effect=place):
+            self.assertEqual(engine.open_window("org.quickshell",
+                             "omarchy-shell shell summon skylark '{}'", 4), self.window)
+
+    def test_open_skylark_is_moved_from_another_desk_without_relaunching(self):
+        window = {**self.window, "workspace": {"id": 5}}
+
+        def dispatch(command):
+            if "window.move" in command:
+                window["workspace"] = {"id": 4}
+
+        with mock.patch.object(engine, "clients", return_value=[window]), \
+             mock.patch.object(engine, "on_ws", side_effect=lambda ws:
+                               [window] if window["workspace"]["id"] == ws else []), \
+             mock.patch.object(engine, "dispatch", side_effect=dispatch), \
+             mock.patch.object(engine.subprocess, "Popen") as launch:
+            result = engine.open_window("org.quickshell",
+                                        "omarchy-shell shell summon skylark '{}'", 4)
+        self.assertEqual(result["address"], "0xcal")
+        self.assertEqual(window["workspace"]["id"], 4)
+        launch.assert_not_called()
+
+    def test_floating_skylark_beside_tiled_magpie_is_recorded(self):
+        skylark = {**self.window, "floating": True}
+        magpie = {**self.window, "title": "🐦 Magpie", "address": "0xmail"}
+        with mock.patch.object(engine, "on_ws", return_value=[skylark, magpie]):
+            self.assertEqual(engine.floating_on(4), [skylark])
+
+    def test_floating_dialogs_of_the_same_app_remain_excluded(self):
+        dialog = {**self.window, "floating": True}
+        with mock.patch.object(engine, "on_ws", return_value=[dialog, self.window]):
+            self.assertEqual(engine.floating_on(4), [])
 
 
 if __name__ == "__main__":
