@@ -240,10 +240,7 @@ def launcher_for_win(win, ws):
     are summoned by title prefix — the shared class says only "the shell" — and everything else
     goes by class as before."""
     if win.get("class") == PLACEHOLDER_CLASS:
-        title = win.get("title", "")
-        for prefix, cmd in SUMMONS.items():
-            if title.startswith(prefix):
-                return cmd
+        return SUMMONS.get(summons_title(win))
     return launcher_for(win.get("class"), ws)
 
 
@@ -310,20 +307,33 @@ PLACEHOLDER_TITLE = re.compile(r"^Barbarian · missing (\S+) · ([0-9a-f]{6})(?:
 # its title prefix and summoned through the shell, never launched as a class (2026-10-15, for
 # Magpie: Dave's Phase 3, via the machine agent). Summon, not toggle: the command must open the
 # window when it is closed and leave it be when it is open.
+#
+# ⚠️ A RENAMED PLUGIN KEEPS ITS OLD TITLE AS AN ALIAS. Skylark became Magpie Calendar on
+# 2026-11-03 (Dave, skylark Q-001 and Q-002): its window's title and its plugin id both changed.
+# A recording made under the old title is the same app, so "Skylark" is read as Magpie Calendar
+# everywhere a title is matched, and Dave's recordings are never rewritten. Until every machine
+# has the renamed plugin the summon falls back to the old id when the shell answers "unknown"
+# for the new one, so the two installs can land in either order.
 SUMMONS = {
     "🐦 Magpie": "omarchy-shell shell summon magpie '{}'",
-    "Skylark": "omarchy-shell shell summon skylark '{}'",
+    "Magpie Calendar": ("sh -c '[ \"$(omarchy-shell shell summon magpie-calendar)\" = ok ]"
+                        " || omarchy-shell shell summon skylark'"),
 }
+SUMMONS_ALIASES = {"Skylark": "Magpie Calendar"}
 
 
 def summons_title(win):
-    """The SUMMONS plugin a window belongs to, or None for every other window — including a
-    Quickshell window whose title names no known plugin. The class alone is the whole shell's
-    and is never an identity: a Magpie may fill a Magpie recording whose title has changed,
-    and nothing else (the probe's four forbidden assignments, 2026-10-15)."""
+    """The SUMMONS plugin a window belongs to, under its current name, or None for every other
+    window — including a Quickshell window whose title names no known plugin. The class alone is
+    the whole shell's and is never an identity: a Magpie may fill a Magpie recording whose title
+    has changed, and nothing else (the probe's four forbidden assignments, 2026-10-15)."""
     if win.get("class") != PLACEHOLDER_CLASS:
         return None
-    return next((p for p in SUMMONS if win.get("title", "").startswith(p)), None)
+    title = win.get("title", "")
+    for prefix in (*SUMMONS, *SUMMONS_ALIASES):
+        if title.startswith(prefix):
+            return SUMMONS_ALIASES.get(prefix, prefix)
+    return None
 
 
 def app_identity(win):
@@ -976,19 +986,21 @@ def open_window(klass, cmd, ws, floating=False):
     title = None
     if klass == PLACEHOLDER_CLASS:
         title = next((p for p in SUMMONS if cmd == SUMMONS[p]), None)
+
+    def is_app(c):
+        return c["class"] == klass and (title is None or summons_title(c) == title)
+
     live = clients()
     if title:
-        existing = next((c for c in live if c["class"] == klass and c["title"].startswith(title)
+        existing = next((c for c in live if is_app(c)
                          and c.get("mapped", True) and not c.get("placeholder")), None)
         if existing:
             return place_new(lambda c: c["address"] == existing["address"], ws, OPEN_TIMEOUT,
                              floating=floating, settle=0)
-    before = {c["address"] for c in live
-              if c["class"] == klass and (title is None or c["title"].startswith(title))}
+    before = {c["address"] for c in live if is_app(c)}
     subprocess.Popen(f"setsid {cmd} >/dev/null 2>&1 &", shell=True)
     def appeared(c):
-        return c["class"] == klass and (title is None or c["title"].startswith(title)) \
-            and c["address"] not in before
+        return is_app(c) and c["address"] not in before
     return place_new(appeared, ws, OPEN_TIMEOUT, floating=floating)
 
 

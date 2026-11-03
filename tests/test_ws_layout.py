@@ -50,12 +50,22 @@ class Summons(unittest.TestCase):
         self.assertEqual(engine.launcher_for_win(win, 3),
                          "omarchy-shell shell summon magpie '{}'")
 
-    def test_skylark_is_summoned_without_toggling_it_closed(self):
-        for title in ("Skylark", "Skylark — Calendar"):
+    def test_magpie_calendar_is_summoned_without_toggling_it_closed(self):
+        """Skylark is Magpie Calendar since 2026-11-03: either title reopens it, through the new
+        plugin id first and the old one when the shell does not know the new one yet."""
+        for title in ("Magpie Calendar", "Magpie Calendar — Week", "Skylark", "Skylark — Calendar"):
             with self.subTest(title=title):
                 win = {"class": "org.quickshell", "title": title}
-                self.assertEqual(engine.launcher_for_win(win, 4),
-                                 "omarchy-shell shell summon skylark '{}'")
+                command = engine.launcher_for_win(win, 4)
+                self.assertEqual(command, engine.SUMMONS["Magpie Calendar"])
+                self.assertIn("omarchy-shell shell summon magpie-calendar", command)
+                self.assertIn("|| omarchy-shell shell summon skylark", command)
+                self.assertNotIn("toggle", command)
+
+    def test_every_alias_names_a_current_plugin(self):
+        for old, new in engine.SUMMONS_ALIASES.items():
+            self.assertIn(new, engine.SUMMONS)
+            self.assertNotIn(old, engine.SUMMONS)
 
     def test_another_quickshell_window_is_not_grabbed(self):
         """The class is the whole shell's; only the titled plugin may be claimed."""
@@ -63,7 +73,7 @@ class Summons(unittest.TestCase):
         self.assertIsNone(engine.launcher_for_win(win, 3))
 
     def test_every_summons_key_is_a_title_prefix_not_a_class(self):
-        for prefix in engine.SUMMONS:
+        for prefix in (*engine.SUMMONS, *engine.SUMMONS_ALIASES):
             self.assertNotEqual(prefix, "org.quickshell")
             self.assertTrue(prefix and "." not in prefix)
 
@@ -93,7 +103,9 @@ class WindowIdentity(unittest.TestCase):
     def test_existing_shell_windows_never_fill_another_plugin_recording(self):
         for recorded, actual in [("🐦 Magpie", "Holodeck"), ("Holodeck", "🐦 Magpie"),
                                  ("Skylark", "🐦 Magpie"), ("🐦 Magpie", "Skylark"),
-                                 ("Skylark", "Holodeck"), ("Holodeck", "Skylark")]:
+                                 ("Skylark", "Holodeck"), ("Holodeck", "Skylark"),
+                                 ("Magpie Calendar", "🐦 Magpie"), ("🐦 Magpie", "Magpie Calendar"),
+                                 ("Magpie Calendar", "Holodeck"), ("Holodeck", "Magpie Calendar")]:
             with self.subTest(recorded=recorded, actual=actual):
                 self.assertEqual(engine.assign([{"win": self.win(recorded)}],
                                                [self.win(actual)]), {})
@@ -101,7 +113,9 @@ class WindowIdentity(unittest.TestCase):
     def test_floating_shell_windows_never_fill_another_plugin_recording(self):
         for recorded, actual in [("🐦 Magpie", "Holodeck"), ("Holodeck", "🐦 Magpie"),
                                  ("Skylark", "🐦 Magpie"), ("🐦 Magpie", "Skylark"),
-                                 ("Skylark", "Holodeck"), ("Holodeck", "Skylark")]:
+                                 ("Skylark", "Holodeck"), ("Holodeck", "Skylark"),
+                                 ("Magpie Calendar", "🐦 Magpie"), ("🐦 Magpie", "Magpie Calendar"),
+                                 ("Magpie Calendar", "Holodeck"), ("Holodeck", "Magpie Calendar")]:
             with self.subTest(recorded=recorded, actual=actual):
                 self.assertEqual(engine.match_floats([self.win(recorded)],
                                                      [self.win(actual)]), {})
@@ -113,6 +127,13 @@ class WindowIdentity(unittest.TestCase):
         actual = self.win("🐦 Magpie — Compose", "0x2")
         self.assertEqual(engine.assign([{"win": recorded}], [actual]), {0: actual})
         self.assertEqual(engine.match_floats([recorded], [actual]), {0: actual})
+
+    def test_a_skylark_recording_matches_the_renamed_window(self):
+        for recorded, actual in [("Skylark", "Magpie Calendar"), ("Magpie Calendar", "Skylark")]:
+            with self.subTest(recorded=recorded, actual=actual):
+                window = self.win(actual, "0x2")
+                self.assertEqual(engine.assign([{"win": self.win(recorded)}], [window]), {0: window})
+                self.assertEqual(engine.match_floats([self.win(recorded)], [window]), {0: window})
 
     def test_ordinary_app_titles_may_change(self):
         recorded = self.win("Old tab", klass="google-chrome")
@@ -223,7 +244,7 @@ class SkylarkRestoration(unittest.TestCase):
              mock.patch.object(engine, "card_down"), contextlib.redirect_stdout(io.StringIO()):
             self.assertEqual(engine.take_snapshot(4), 0)
         saved = write.call_args.args[0]["windows"][0]
-        self.assertEqual(saved["launch"], "omarchy-shell shell summon skylark '{}'")
+        self.assertEqual(saved["launch"], engine.SUMMONS["Magpie Calendar"])
         self.assertNotIn("cannot reopen", card.call_args.args[0])
 
     def test_an_old_null_launcher_recording_restores_without_resaving(self):
@@ -247,8 +268,33 @@ class SkylarkRestoration(unittest.TestCase):
                  mock.patch.object(engine, "ANNOUNCE", False), \
                  contextlib.redirect_stdout(io.StringIO()):
                 self.assertEqual(engine.restore(4), 0)
-            self.assertIn("omarchy-shell shell summon skylark '{}'", launch.call_args.args[0])
+            self.assertIn(engine.SUMMONS["Magpie Calendar"], launch.call_args.args[0])
             self.assertEqual(path.read_bytes(), original)
+
+    def test_a_recording_with_the_old_summon_reopens_through_the_new_one(self):
+        """Dave's Messaging recording stores Skylark's launch as the old summon string; the live
+        launcher wins over it, so the renamed plugin is summoned, never the old id alone."""
+        record = {"workspace": 4, "name": "Messaging", "format": 2, "floating": [],
+                  "windows": [{**self.window, "launch": "omarchy-shell shell summon skylark '{}'",
+                               "after": None, "side": None, "share": None}]}
+        with tempfile.TemporaryDirectory(prefix="barbarian-skylark-record-") as temporary:
+            path = pathlib.Path(temporary) / "ws4.json"
+            path.write_text(json.dumps(record))
+            with mock.patch.object(engine, "SNAP_DIR", temporary), \
+                 mock.patch.object(engine, "on_ws", return_value=[]), \
+                 mock.patch.object(engine, "clients", return_value=[]), \
+                 mock.patch.object(engine, "stand_on"), \
+                 mock.patch.object(engine, "default_split_ratio", return_value=1), \
+                 mock.patch.object(engine, "set_default_split_ratio"), \
+                 mock.patch.object(engine, "dispatch"), \
+                 mock.patch.object(engine, "place_new", return_value=self.window), \
+                 mock.patch.object(engine.subprocess, "Popen") as launch, \
+                 mock.patch.object(engine, "card"), mock.patch.object(engine, "card_down"), \
+                 mock.patch.object(engine, "ANNOUNCE", False), \
+                 contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(engine.restore(4), 0)
+        self.assertEqual([c.args[0] for c in launch.call_args_list],
+                         [f"setsid {engine.SUMMONS['Magpie Calendar']} >/dev/null 2>&1 &"])
 
     def test_a_new_unrelated_shell_window_cannot_be_taken_for_skylark(self):
         def place(predicate, ws, timeout, floating=False):
@@ -256,16 +302,21 @@ class SkylarkRestoration(unittest.TestCase):
             self.assertFalse(predicate({**self.window, "title": "Holodeck"}))
             self.assertFalse(predicate({**self.window, "class": "foot"}))
             self.assertTrue(predicate(self.window))
+            self.assertTrue(predicate({**self.window, "title": "Magpie Calendar"}))
             return self.window
 
         with mock.patch.object(engine, "clients", return_value=[]), \
              mock.patch.object(engine.subprocess, "Popen"), \
              mock.patch.object(engine, "place_new", side_effect=place):
             self.assertEqual(engine.open_window("org.quickshell",
-                             "omarchy-shell shell summon skylark '{}'", 4), self.window)
+                             engine.SUMMONS["Magpie Calendar"], 4), self.window)
 
     def test_open_skylark_is_moved_from_another_desk_without_relaunching(self):
-        window = {**self.window, "workspace": {"id": 5}}
+        for title in ("Skylark", "Magpie Calendar"):
+            with self.subTest(title=title):
+                self.move_open_calendar({**self.window, "title": title, "workspace": {"id": 5}})
+
+    def move_open_calendar(self, window):
 
         def dispatch(command):
             if "window.move" in command:
@@ -276,8 +327,7 @@ class SkylarkRestoration(unittest.TestCase):
                                [window] if window["workspace"]["id"] == ws else []), \
              mock.patch.object(engine, "dispatch", side_effect=dispatch), \
              mock.patch.object(engine.subprocess, "Popen") as launch:
-            result = engine.open_window("org.quickshell",
-                                        "omarchy-shell shell summon skylark '{}'", 4)
+            result = engine.open_window("org.quickshell", engine.SUMMONS["Magpie Calendar"], 4)
         self.assertEqual(result["address"], "0xcal")
         self.assertEqual(window["workspace"]["id"], 4)
         launch.assert_not_called()
