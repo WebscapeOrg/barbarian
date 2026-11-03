@@ -105,6 +105,27 @@ class Apply(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(self.shell.read_text(), before)
 
+    def test_a_second_writer_waits_for_the_first(self):
+        """Another plugin's uninstaller may run while the panel writes: one at a time."""
+        lock = self.home / ".config/omarchy/.bar-arrange-apply.lock"
+        before = self.shell.read_text()
+        holder = subprocess.Popen(["flock", str(lock), "sleep", "3"])
+        try:
+            for _ in range(50):
+                if lock.exists():
+                    break
+                subprocess.run(["sleep", "0.05"])
+            result = subprocess.run(["timeout", "1", str(SCRIPT), "R:omarchy.clock:hidden"],
+                                    capture_output=True, text=True,
+                                    env={**os.environ, "HOME": str(self.home)})
+        finally:
+            holder.kill()
+            holder.wait()
+        self.assertEqual(result.returncode, 124, result.stderr)
+        self.assertEqual(self.shell.read_text(), before)
+        self.run_apply("R:omarchy.clock:hidden")
+        self.assertNotIn("omarchy.clock", self.ids("right"))
+
     def test_the_panel_never_drops_an_entry_it_does_not_list(self):
         """Barbarian's own widget is never listed; it must keep its place at the lane's end."""
         self.run_apply("R:omarchy.power", "R:omarchy.clock", "WS:omarchy.workspaces:left")

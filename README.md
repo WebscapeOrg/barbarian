@@ -170,7 +170,13 @@ one. The `reptile-feature status|on|off <name>` adapter supplies Caboodle's swit
   entries move, so each widget's per-widget settings travel with it) and parks
   hidden widget ids in `~/.config/omarchy/bar-hidden.json`. The installer keeps a short list of
   plugins that changed their id (so far only Skylark, now `magpie-calendar`) and renames their
-  hidden entries to match, so showing one again brings back the renamed plugin.
+  hidden entries to match, so showing one again brings back the renamed plugin. If the write
+  is refused, because the files no longer hold an entry the panel lists, nothing changes and a
+  notification says so. Another plugin's uninstaller takes its own entry out of the bar and
+  the hidden list with
+  `~/.config/omarchy/plugins/atlas.arrange/bin/bar-arrange-apply DEL:<its id>`. It removes
+  every entry with that id and writes both files back. It exits 1 and changes nothing when there
+  is no such entry. Runs take turns through a lock, so two callers never undo each other.
   Its `bin/` scripts drive the per-desk wallpaper picker: pin any image (or a solid
   colour) to a desk, add images from Pictures/Downloads, remove ones you added, and
   hide the theme's own (listed per theme in `workspace-backgrounds/<theme>/hidden-images`).

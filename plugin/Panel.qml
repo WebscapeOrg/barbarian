@@ -1321,7 +1321,16 @@ Panel {
         + (mode === "1" ? "left" : mode === "2" ? "center" : "right"))
     for (i = 0; i < spacerDeletes; i++) argv.push("DEL:omarchy.spacer")
     for (var ui = 0; ui < uninstalls.length; ui++) argv.push("DEL:" + uninstalls[ui])
-    applyProc.command = argv
+    // ⚠️ A REFUSED WRITE IS SAID ALOUD (2026-11-03). bar-arrange-apply refuses, changing
+    // nothing, when the panel names an entry the files no longer hold, e.g. a plugin's own
+    // uninstall took it out while the panel was open. The panel has closed by then, so a
+    // silent refusal looked to Dave like his change had gone in.
+    applyProc.command = ["sh", "-c",
+      'err=$("$0" "$@" 2>&1 >/dev/null) || { status=$?; notify-send -u critical'
+      + ' "Barbarian did not save your bar changes"'
+      + ' "Your bar is as it was. Open the panel again and redo the change.'
+      + '\n\n$(printf "%s\\n" "$err" | tail -n 1 | sed "s/^bar-arrange-apply: //")"; exit "$status"; }'
+    ].concat(argv)
     applyProc.running = true
     // The uninstalled plugins' folders leave detached as ONE process for the whole batch,
     // outliving the panel: every trash reloads the whole shell, so the script clears them
