@@ -55,8 +55,8 @@ WAIT_UNIT="barbarian-install-pending"
 # A plugin file written while the screen is locked cannot be compiled then: restarting Quickshell
 # would unlock the machine. This file says a restart is owed, and the next free run does it.
 RESTART_STAMP="$HOME/.local/state/omarchy/barbarian-restart-owed"
-UNLOCK_POLL=10
-UNLOCK_GIVE_UP=21600      # six hours of locked screen, then leave it to the next run
+UNLOCK_POLL="${BARBARIAN_UNLOCK_POLL:-10}"
+UNLOCK_GIVE_UP="${BARBARIAN_UNLOCK_GIVE_UP:-21600}"   # six hours busy, then leave it to the next run
 
 # A plain ssh login has neither of these, and without them the lock cannot be read at all — the
 # shell's own `omarchy-shell` refuses with "OMARCHY_PATH is not set" (2026-09-20). Defaults, not
@@ -85,10 +85,43 @@ session_locked() {
 }
 
 # The panel being installed may be the one on screen: writing its files reloads the plugin under
-# the user's hands, and the restart below would take the panel away mid-gesture. An unreachable
-# hyprctl (ssh, no session) means no panel — never wait on a question that cannot be answered.
+# the user's hands, and the restart below would take the panel away mid-gesture.
+# ⚠️ EVERY LIVE HYPRLAND IS ASKED, EVERY TIME (2026-11-03, hobnob #7403). hyprctl finds its session
+# through HYPRLAND_INSTANCE_SIGNATURE, which a plain ssh login lacks (hyprctl then answers "not
+# set!" while a session runs), and which a waiter keeps from when it started, dead after a re-login.
+# So no signature is trusted: each instance folder whose lock file names a running Hyprland is
+# asked in turn, a nested test session included. Any of them showing the panel, or failing or
+# hanging when asked, counts as a panel on screen: a wrong "open" costs a retry, a wrong "closed"
+# can cost Dave his arranging, and so does an answer that is not hyprctl's JSON. A Hyprland
+# running with no folder to ask it through counts the same. Only a machine with no Hyprland at all
+# (ssh into a box with no session) has no panel, so that case never waits on a question that
+# cannot be answered. A hyprctl that hung once is not asked again in the same pass: every file
+# checks, and each would wait out the timeout. The nested test session (tests/nested/nested) is
+# never asked: it runs the panel from this repo, not from the installed folder, so an install
+# cannot touch it, and one left running would otherwise hold every install back.
+HYPRCTL_HUNG=0
 panel_open() {
-  hyprctl layers -j 2>/dev/null | grep -q omarchy-keyboard-panel
+  local runtime dir pid layers nested asked=0
+  [ "$HYPRCTL_HUNG" = 1 ] && return 0
+  runtime="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+  nested="$(cat "$runtime/barbarian-nested/sig" 2>/dev/null)"
+  for dir in "$runtime"/hypr/*/; do
+    [ -n "$nested" ] && [ "$(basename "$dir")" = "$nested" ] && continue
+    pid="$(head -n 1 "$dir/hyprland.lock" 2>/dev/null)"
+    case "$pid" in ''|*[!0-9]*) continue ;; esac
+    [ "$(cat "/proc/$pid/comm" 2>/dev/null)" = Hyprland ] || continue
+    asked=1
+    layers="$(HYPRLAND_INSTANCE_SIGNATURE="$(basename "$dir")" timeout 5 hyprctl layers -j 2>/dev/null)"
+    case "$?" in
+      0) ;;
+      124) HYPRCTL_HUNG=1; return 0 ;;
+      *) return 0 ;;
+    esac
+    case "$layers" in '['*|'{'*) ;; *) return 0 ;; esac
+    grep -q omarchy-keyboard-panel <<<"$layers" && return 0
+  done
+  [ "$asked" = 1 ] && return 1
+  pgrep -u "$(id -u)" -x Hyprland >/dev/null 2>&1
 }
 
 # A desk renumber runs detached, outliving the panel, and spends a few seconds with the desks
@@ -110,6 +143,7 @@ if [ "${1:-}" = "--when-unlocked" ]; then
     fi
     sleep "$UNLOCK_POLL"
     waited=$((waited + UNLOCK_POLL))
+    HYPRCTL_HUNG=0                       # each poll asks afresh
   done
 fi
 

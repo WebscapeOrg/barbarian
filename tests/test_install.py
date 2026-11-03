@@ -38,8 +38,11 @@ class Install(unittest.TestCase):
         # A shell to find, so the installer does not take "nothing running" for "nothing locked",
         # and no renumber in flight. Stubbed rather than run, so the tests never depend on — or
         # wait for — what happens to be running on the machine.
+        # Hyprland is running, as on every machine with a session, so a panel check that fails to
+        # ask the session it found reads as busy, as it would for real.
         self.stub("pgrep", 'case "$*" in *quickshell*)'
                                  ' [ -f "$SHELL_ALIVE" ] && echo 1234 || exit 1 ;;'
+                                 ' *"-x Hyprland"*) echo 4321 ;;'
                                  ' *) exit 1 ;; esac')
         # The shell stub is a killable thing: the first kill lands (and takes the marker the
         # pgrep stub keys on), the second finds nothing — the shape the stop-first pass needs.
@@ -55,8 +58,28 @@ class Install(unittest.TestCase):
         self.stub("systemctl", 'case "$*" in *is-active*) exit 3 ;; *) exit 0 ;; esac')
         self.stub("hyprctl", 'echo "[]"')          # no panel on screen
         self.locked(False)
+        # A private runtime folder with one running "Hyprland" (a copy of sleep under that name,
+        # which is what /proc/<pid>/comm shows), so the panel check never walks Dave's own
+        # sessions in /run/user and the stub hyprctl is what answers.
+        self.runtime = self.tmp / "run"
+        self.runtime.mkdir()
+        self.fake_hyprland = self.tmp / "Hyprland"
+        shutil.copy("/usr/bin/sleep", self.fake_hyprland)
+        self.sessions = []
+        self.live_hyprland("main-session")
+
+    def live_hyprland(self, signature):
+        process = subprocess.Popen([str(self.fake_hyprland), "60"])
+        self.sessions.append(process)
+        folder = self.runtime / "hypr" / signature
+        folder.mkdir(parents=True)
+        (folder / "hyprland.lock").write_text(f"{process.pid}\nwayland-1\n")
+        return folder
 
     def tearDown(self):
+        for process in self.sessions:
+            process.kill()
+            process.wait()
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def stub(self, name, body):
@@ -67,13 +90,13 @@ class Install(unittest.TestCase):
     def locked(self, yes):
         self.stub("omarchy-shell", f'echo \'{{"sessionLocked":{str(bool(yes)).lower()}}}\'')
 
-    def run_install(self, *args):
-        env = {"HOME": str(self.home), "PATH": f"{self.bin}:{os.environ['PATH']}",
+    def run_install(self, *args, extra=None):
+        env = {**(extra or {}), "HOME": str(self.home), "PATH": f"{self.bin}:{os.environ['PATH']}",
                "OMARCHY_PATH": str(self.bin),   # the scripts prepend "$OMARCHY_PATH/bin" — stubs must win
                "CALLS": str(self.calls), "COUNT": str(self.tmp / "count"),
                "SHELL_ALIVE": str(self.shell_alive),
                "BARBARIAN_UNINSTALL_SETTLE": "0",
-               "XDG_RUNTIME_DIR": os.environ.get("XDG_RUNTIME_DIR", "/tmp")}
+               "XDG_RUNTIME_DIR": str(self.runtime)}
         return subprocess.run([str(SCRIPT), *args], capture_output=True, text=True, env=env)
 
     def called(self, name):
@@ -280,6 +303,89 @@ class Install(unittest.TestCase):
         self.run_install()
         self.assertFalse((self.home / PLUGIN).exists())
         self.assertTrue(self.called("systemd-run"))
+
+    def no_hyprland(self):
+        for process in self.sessions:
+            process.kill()
+            process.wait()
+        self.sessions = []
+        self.stub("pgrep", 'case "$*" in *quickshell*)'
+                           ' [ -f "$SHELL_ALIVE" ] && echo 1234 || exit 1 ;;'
+                           ' *) exit 1 ;; esac')
+
+    def test_a_session_that_cannot_be_asked_counts_as_a_panel_on_screen(self):
+        """#7403: hyprctl failing or hanging for a running Hyprland is busy."""
+        self.stub("hyprctl", 'echo "HYPRLAND_INSTANCE_SIGNATURE not set!" >&2; exit 1')
+        result = self.run_install()
+        self.assertNotIn("Panel.qml", self.installed(), result.stdout + result.stderr)
+        self.assertTrue(self.called("systemd-run"))
+
+    def test_a_hyprland_with_no_folder_to_ask_counts_as_a_panel_on_screen(self):
+        for process in self.sessions:
+            process.kill()
+            process.wait()
+        self.sessions = []                        # pgrep (setUp) still finds a Hyprland
+        result = self.run_install()
+        self.assertNotIn("Panel.qml", self.installed(), result.stdout + result.stderr)
+
+    def test_every_live_session_is_asked_not_just_the_first(self):
+        """A nested test session must not hide the panel open in Dave's own."""
+        self.live_hyprland("zz-dave")
+        self.stub("hyprctl", 'case "$HYPRLAND_INSTANCE_SIGNATURE" in'
+                             ' zz-dave) echo \'[{"namespace": "omarchy-keyboard-panel"}]\' ;;'
+                             ' *) echo "[]" ;; esac')
+        result = self.run_install()
+        self.assertNotIn("Panel.qml", self.installed(), result.stdout + result.stderr)
+
+    def test_a_folder_left_by_a_session_that_ended_is_not_asked(self):
+        """Its process id may since belong to something else, alive but not Hyprland."""
+        stale = self.runtime / "hypr" / "ended"
+        stale.mkdir(parents=True)
+        (stale / "hyprland.lock").write_text(f"{os.getpid()}\nwayland-9\n")
+        self.stub("hyprctl", '[ "$HYPRLAND_INSTANCE_SIGNATURE" = ended ] && exit 1; echo "[]"')
+        result = self.run_install()
+        self.assertIn("Panel.qml", self.installed(), result.stdout + result.stderr)
+
+    def test_a_hung_hyprctl_counts_as_a_panel_on_screen(self):
+        """Asked once, timed out once: a hang must not cost the timeout for every file."""
+        import time
+        self.stub("hyprctl", "exec sleep 30")
+        started = time.monotonic()
+        result = self.run_install()
+        self.assertLess(time.monotonic() - started, 20, "the hang was waited out more than once")
+        self.assertNotIn("Panel.qml", self.installed(), result.stdout + result.stderr)
+        self.assertEqual(len(self.called("hyprctl")), 1)
+
+    def test_the_nested_test_session_is_never_asked(self):
+        """tests/nested/nested runs the panel from the repo; one left open must not hold installs."""
+        self.live_hyprland("nested-session")
+        (self.runtime / "barbarian-nested").mkdir()
+        (self.runtime / "barbarian-nested/sig").write_text("nested-session\n")
+        self.stub("hyprctl", 'case "$HYPRLAND_INSTANCE_SIGNATURE" in'
+                             ' nested-session) echo \'[{"namespace": "omarchy-keyboard-panel"}]\' ;;'
+                             ' *) echo "[]" ;; esac')
+        result = self.run_install()
+        self.assertIn("Panel.qml", self.installed(), result.stdout + result.stderr)
+
+    def test_an_answer_that_is_not_hyprctls_json_counts_as_a_panel_on_screen(self):
+        self.stub("hyprctl", 'echo "unknown request"')
+        result = self.run_install()
+        self.assertNotIn("Panel.qml", self.installed(), result.stdout + result.stderr)
+
+    def test_a_waiter_asks_a_hung_session_again_on_its_next_poll(self):
+        count = self.tmp / "hyprctl-count"
+        self.stub("hyprctl", f'n=$(( $(cat "{count}" 2>/dev/null || echo 0) + 1 )); echo $n > "{count}"; '
+                             '[ $n = 1 ] && exec sleep 30; echo "[]"')
+        result = self.run_install("--when-unlocked", extra={"BARBARIAN_UNLOCK_POLL": "1",
+                                                            "BARBARIAN_UNLOCK_GIVE_UP": "4"})
+        self.assertIn("Panel.qml", self.installed(), result.stdout + result.stderr)
+
+    def test_no_hyprland_at_all_means_no_panel(self):
+        """A machine with no session over ssh installs rather than waiting forever."""
+        self.no_hyprland()
+        self.stub("hyprctl", 'echo "HYPRLAND_INSTANCE_SIGNATURE not set!" >&2; exit 1')
+        result = self.run_install()
+        self.assertIn("Panel.qml", self.installed(), result.stdout + result.stderr)
 
     def test_a_restart_owed_from_a_locked_run_happens_at_the_next_free_one(self):
         self.locked(True)
