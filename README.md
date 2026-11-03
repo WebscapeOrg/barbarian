@@ -119,9 +119,12 @@ keeps in line.
 
 ## Reptile features
 
-Saved layouts can reopen Skylark and Magpie through the shell. Existing Skylark recordings
-work without saving them again, including recordings made before reopening was supported.
-If Skylark is already open on another workspace, restore brings that window back.
+Saved layouts can reopen Magpie Calendar and Magpie through the shell. Magpie Calendar was
+called Skylark until 3 November 2026; recordings that saved it as Skylark reopen it without
+being saved again, including recordings made before reopening was supported. While a machine
+still has the plugin under its old id, Barbarian summons `skylark` when the shell does not know
+`magpie-calendar`. If Magpie Calendar is already open on another workspace, restore brings that
+window back.
 
 Links that Magpie opens in their own window are left alone. Recording a desk skips them,
 closing extra windows never closes them, and a restore never takes one for a window it is
