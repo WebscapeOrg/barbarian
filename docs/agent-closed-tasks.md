@@ -41,3 +41,17 @@ Allow me to enable/disable Reptile features individually. I am worried one of th
 - 2026-11-02 16:52 · Ready by @barbarian: Unlock rollout completed; checking the running panels and Caboodle controls.
 - 2026-11-02 17:00 · Progress by @barbarian: Live checks passed; final review and closure
 - 2026-11-02 17:01 · Done by @barbarian: Ten independent Reptile feature switches are live in HYPER+L → Features and Caboodle. Each Quick app has its own Hide with SUPER+W choice; existing choices are preserved. Build 9521d30 is installed on Enterprise, DS9 and Voyager, with the running Enterprise panel and ten healthy Caboodle controls verified. P-006 has screenshots and the reviewed test results. http://100.124.40.42:3012/peacock/barbarian/P-006
+
+## C-004 Restore Skylark from saved workspace layouts
+
+Dave showed Barbarian’s warning after recording Skylark on Messaging, then asked: Please fix. Remember the folklore decree that Fix >> Mention ;)
+
+Attached: [barbarian-messaging-workspace-warning-notification.jpg](carrot-files/C-004/barbarian-messaging-workspace-warning-notification.jpg).
+
+- 2026-11-03 12:59 · Added by @barbarian for @barbarian.
+- 2026-11-03 12:59 · Taken by @barbarian.
+- 2026-11-03 13:08 · Progress by @barbarian: Review gaps fixed; verifying restoration
+- 2026-11-03 13:19 · Parked by @barbarian: Reviewed fix 9c35986 is pushed and installed on DS9/Voyager. Enterprise locked before installation; its safe installer and reviewed follow-up timer are active. Final native restore check waits for unlock (P-007).
+- 2026-11-03 13:24 · Ready by @barbarian: Enterprise installed the reviewed engine after unlock; verifying the existing Messaging recording.
+- 2026-11-03 13:24 · Progress by @barbarian: installed, checking live restore
+- 2026-11-03 13:27 · Done by @barbarian: Installed on Enterprise, DS9 and Voyager. Enterprise restored the existing Messaging recording without resaving; repeat restoration kept one Skylark window, saved layouts/settings stayed unchanged, and original focus returned. Reviewed source 9c35986; 65 tests and 40 independent cases passed. http://100.124.40.42:3012/peacock/barbarian/P-007

@@ -89,10 +89,10 @@ present stand-in is not automatically replaced merely because a launcher becomes
 the old-record checks cover missing real windows, not automatic stand-in replacement. Unknown
 shell windows do not acquire Skylark's launcher or identity.
 
-Live installation, a real shell summon and the actual Messaging layout remain the owner's
-delivery-verification responsibility. This review does not assert that any machine is already
-running the change. Only this report and private temporary fixtures were written by the verifier;
-no live window, setting, calendar, installer or service was changed.
+At the source-review boundary, live installation, a real shell summon and the actual Messaging
+layout remained the owner's delivery-verification responsibility; that pass did not assert that
+any machine was already running the change. Only this report and private temporary fixtures
+were written by the verifier; no live window, setting, calendar, installer or service was changed.
 
 ## Completion-watcher review
 
@@ -146,3 +146,49 @@ the display to select the shell. The lock read is only a sample: the returning a
 check current lock state and feature gates again before any native operation. Missing files
 or unreadable status retry without claiming readiness, and the deadline still requests manual
 attention. The watcher neither proves native restore behavior nor closes the task itself.
+
+## Final delivery evidence review
+
+Delivery evidence is approved within the distinctions below. The independent read-only checks
+on 3 November confirmed the reviewed engine installed on Enterprise, DS9 and Voyager. Each
+installed `ws-layout` has SHA-256
+`a37c96169d153a4f1b14eb90a276ae6996e6f421088806138ac3c4afebcf81a1`, equal to the source engine.
+The application source, tests and README remain unchanged from `9c35986`; no source suite was
+rerun for this delivery-only review. No additional application blocker was found.
+
+The owner's retained `native-verification.json` records the installed engine restoring the
+existing Messaging recording: the first result is `1 window in place, 1 opened`, and the second
+is `already as saved`. Its `show 4` result is `desk now: as saved`. These are owner-operated
+results, not restore commands rerun by this verifier. The original partial evidence is retained
+as `native-verification-initial.json`.
+
+Independent current reads corroborated the resulting state:
+
+- The actual Messaging recording still contains one `org.quickshell` / `Skylark` entry with
+  `launch: null`, and no floating entries. It is byte-identical to `messaging-before.json`.
+- The main compositor reports exactly one mapped, tiled Skylark window on Messaging, at
+  `0x559d0b7b6b90`, PID `3170160`. Both identifiers match the retained native result. That PID's
+  command line is the main Omarchy Quickshell instance.
+- The current workspace is Agents and the focused window is `0x559d09adb3d0`, matching the
+  original desk/window recorded before the operation.
+- All ten protected files match the owner's retained pre-operation hashes: six workspace
+  recordings, features.json, quick-apps.json, shell.json and bar-hidden.json. The before hashes
+  were captured by the owner; the matching current hashes were independently recalculated.
+
+The owner reports that assertions comparing unrelated client addresses, PIDs, workspaces and
+geometry passed during both restores. The original client snapshots were held only in memory,
+so this verifier cannot independently reconstruct that comparison. The native JSON's boolean
+claim is treated as an owner-executed assertion, not a retained before/after client trace.
+
+The initial operator script failed a later comparison of the entire split-ratio `getoption`
+object. The original option object was also held only in memory and is unavailable. The
+independent current read is `float: 1.0` and `set: true`. Neither ratio equality nor a
+metadata-only cause is established; the report and work document explicitly preserve this
+limit. A failed comparison alone does not establish a source regression, and the split-ratio
+helpers are unchanged in this patch. The successful reopening, retained null-launch recording,
+current single window, protected-file hashes and returned focus have separate evidence.
+
+This verifier ran no window dispatch, restore, summon, calendar action, installer, service
+operation or notification. Native operation evidence is from Enterprise only; DS9 and Voyager
+were checked by reading their installed engine hashes over SSH. Calendar records were not
+opened or compared. Publication and task closure are outside this independent verification pass.
