@@ -393,6 +393,78 @@ PY
   fi
 fi
 
+# ⚠️ A WIDGET HIDDEN UNDER AN OLD NAME FOLLOWS ITS PLUGIN'S RENAME (2026-11-03, hobnob #7371).
+# Skylark became Magpie Calendar. The calendar's own installer renames its entry in shell.json,
+# but not here: this sidecar is Barbarian's alone. So an entry hidden as `skylark` takes the new
+# id, still hidden and in the same spot, and showing it again brings back the calendar instead of
+# a widget for a plugin that no longer exists. Only the sidecar: the entry on the bar belongs to
+# the calendar's installer, and renaming it before the new plugin is in would blank it. Either
+# order of the two installs ends the same. An old entry whose new id is already hidden is a twin,
+# and goes. Only the panel reads this file (the shell never does), so a locked screen is no
+# reason to wait; a panel on screen is, since it would write the old id back when it closes —
+# so then nothing is written, and the waiter does it once the panel has closed.
+PANEL_OPEN=0
+panel_open && PANEL_OPEN=1
+PANEL_OPEN="$PANEL_OPEN" python3 - <<'PY'
+import json, os, sys, tempfile
+
+RENAMED = {"skylark": "magpie-calendar"}
+LANES = ("left", "center", "right")
+path = os.path.expanduser("~/.config/omarchy/bar-hidden.json")
+
+def follow(data):
+    hidden = {(row.get("entry") or {}).get("id") for lane in LANES for row in data.get(lane) or []}
+    renamed = twins = 0
+    for lane in LANES:
+        if lane not in data:
+            continue
+        kept = []
+        for row in data[lane]:
+            entry = row.get("entry") or {}
+            new = RENAMED.get(entry.get("id"))
+            if new is None:
+                kept.append(row)
+            elif new in hidden:
+                twins += 1
+            else:
+                kept.append({**row, "entry": {**entry, "id": new}})
+                hidden.add(new)
+                renamed += 1
+        data[lane] = kept
+    return renamed, twins
+
+if not os.path.exists(path):
+    sys.exit(0)
+try:
+    with open(path) as f:
+        data = json.load(f)
+    renamed, twins = follow(data)
+except (ValueError, AttributeError, TypeError):
+    print("barbarian: bar-hidden.json is not in the shape the bar editor writes; left as it is")
+    sys.exit(0)
+if not renamed and not twins:
+    sys.exit(0)
+if os.environ.get("PANEL_OPEN") == "1":
+    sys.exit(3)
+fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), prefix="." + os.path.basename(path) + ".")
+try:
+    with os.fdopen(fd, "w") as f:
+        json.dump(data, f, indent=2)
+        f.write("\n")
+    os.replace(tmp, path)
+except BaseException:
+    os.unlink(tmp)
+    raise
+if renamed:
+    print("barbarian: a widget hidden under its plugin's old name now carries the new one")
+if twins:
+    print("barbarian: a hidden widget listed under both its old and new names is now listed once")
+PY
+if [ "$?" = 3 ]; then
+  arm_waiter
+  echo "barbarian: a hidden widget's renamed id waits for the panel to close"
+fi
+
 # A restart is owed when this run wrote a plugin file, or when an earlier one did and the screen
 # went up before it could be compiled.
 RESTART_OWED=0
