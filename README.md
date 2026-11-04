@@ -226,6 +226,12 @@ panel change is held back in the same run. Each file is written beside the old o
 renamed into place, so a file it cannot write keeps its old copy; it is listed at the end
 and the run exits 1.
 
+What is held back waits in a `barbarian-install-pending` user unit for up to a week, so an
+evening commit goes in at the morning unlock: it checks every ten seconds for the first hour,
+then every thirty. When the screen clears it runs the installer as committed now, not the copy
+it started with, and it does nothing while `install.sh` has uncommitted changes; that edit's
+own commit installs it.
+
 ## Verify drag behavior
 
 The native Qt Quick tests exercise the actual pointer handler, animated displacement,

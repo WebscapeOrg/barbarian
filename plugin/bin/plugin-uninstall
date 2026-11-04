@@ -153,5 +153,5 @@ fi
 # the folder as it is.
 if pgrep -u "$(id -u)" -x quickshell >/dev/null 2>&1; then
   mkdir -p "$(dirname "$RESTART_STAMP")"
-  : > "$RESTART_STAMP"
+  [ -f "$RESTART_STAMP" ] || : > "$RESTART_STAMP"   # never over a "stopped" (see install.sh)
 fi

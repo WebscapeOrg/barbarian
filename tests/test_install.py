@@ -98,7 +98,20 @@ class Install(unittest.TestCase):
                "SHELL_ALIVE": str(self.shell_alive),
                "BARBARIAN_UNINSTALL_SETTLE": "0",
                "XDG_RUNTIME_DIR": str(self.runtime)}
-        return subprocess.run([str(SCRIPT), *args], capture_output=True, text=True, env=env)
+        # The waiter runs only a committed installer, so it runs from a copy outside git: what this
+        # clone has committed must not decide a test. A waiter that spins instead of sleeping fails
+        # here rather than hanging the suite.
+        waiter = "--when-unlocked" in args or "BARBARIAN_WAITER" in (extra or {})
+        script = self.repo_copy() if waiter else SCRIPT
+        return subprocess.run([str(script), *args], capture_output=True, text=True, env=env, timeout=120)
+
+    def repo_copy(self):
+        repo = self.tmp / "repo"
+        if not repo.exists():
+            for part in ("engine", "plugin"):
+                shutil.copytree(ROOT / part, repo / part, ignore=shutil.ignore_patterns("__pycache__"))
+            shutil.copy2(SCRIPT, repo / "install.sh")
+        return repo / "install.sh"
 
     def called(self, name):
         return [line for line in self.calls.read_text().splitlines() if line.startswith(name)]
@@ -595,13 +608,15 @@ class Install(unittest.TestCase):
         self.run_install()
         self.assertTrue([c for c in self.called("systemctl") if "try-restart" in c])
 
-    def wait_through_an_edit(self, replace, by):
+    def waiter_env(self, **extra):
+        return {"HOME": str(self.home), "PATH": f"{self.bin}:{os.environ['PATH']}",
+                "OMARCHY_PATH": str(self.bin), "CALLS": str(self.calls),
+                "COUNT": str(self.tmp / "count"), "SHELL_ALIVE": str(self.shell_alive),
+                "BARBARIAN_UNINSTALL_SETTLE": "0", "XDG_RUNTIME_DIR": str(self.runtime), **extra}
+
+    def wait_through_an_edit(self, replace, by, script=None, **extra):
         """Run a copied installer's waiter; its first lock check rewrites the copy in place."""
-        repo = self.tmp / "repo"
-        for part in ("engine", "plugin"):
-            shutil.copytree(ROOT / part, repo / part, ignore=shutil.ignore_patterns("__pycache__"))
-        script = repo / "install.sh"
-        shutil.copy2(SCRIPT, script)
+        script = script or self.repo_copy()
         edited = self.tmp / "edited"
         self.stub("omarchy-shell",
                   f'if [ -e "{edited}" ]; then echo \'{{"sessionLocked":false}}\'; exit 0; fi\n'
@@ -611,12 +626,8 @@ class Install(unittest.TestCase):
                   f'"{script}" "$REPLACE" "$BY"\n'
                   'echo \'{"sessionLocked":true}\'')
         result = subprocess.run([str(script), "--when-unlocked"], capture_output=True, text=True,
-                                env={"HOME": str(self.home), "PATH": f"{self.bin}:{os.environ['PATH']}",
-                                     "OMARCHY_PATH": str(self.bin), "CALLS": str(self.calls),
-                                     "COUNT": str(self.tmp / "count"), "SHELL_ALIVE": str(self.shell_alive),
-                                     "BARBARIAN_UNINSTALL_SETTLE": "0", "BARBARIAN_UNLOCK_POLL": "1",
-                                     "XDG_RUNTIME_DIR": str(self.runtime),
-                                     "REPLACE": replace, "BY": by}, timeout=60)
+                                env=self.waiter_env(BARBARIAN_UNLOCK_POLL="1", REPLACE=replace, BY=by,
+                                                    **extra), timeout=60)
         self.assertTrue(edited.exists(), result.stdout + result.stderr)
         return result
 
@@ -630,9 +641,244 @@ class Install(unittest.TestCase):
     def test_the_waiter_does_not_run_an_installer_caught_half_edited(self):
         result = self.wait_through_an_edit("set -u\n", "set -u\nif true; then\n")
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-        self.assertIn("does not parse", result.stderr)
+        self.assertIn("is being edited", result.stderr)
         self.assertFalse((self.home / PLUGIN).exists())
         self.assertFalse(self.called("quickshell"))
+
+    def commit_the_copy(self):
+        repo = self.repo_copy().parent
+        git = ["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@t"]
+        for command in (["init", "-q"], ["add", "-A"], ["commit", "-q", "-m", "x"]):
+            subprocess.run(git + command, check=True, capture_output=True,
+                           env={**os.environ, "HOME": str(self.home)})
+        return git
+
+    def test_the_waiter_does_not_run_an_installer_with_uncommitted_changes(self):
+        """It parses, but a change not yet committed may be one edit of several."""
+        self.commit_the_copy()
+        result = self.wait_through_an_edit("set -u\n", "set -u\nunset UNLOCK_POLL\n")
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("is being edited", result.stderr)
+        self.assertFalse((self.home / PLUGIN).exists())
+
+    def test_a_worktree_counts_its_uncommitted_changes_too(self):
+        """A worktree's .git is a file, not a folder; it must not skip the check."""
+        git = self.commit_the_copy()
+        worktree = self.tmp / "worktree"
+        subprocess.run(git + ["worktree", "add", "-q", str(worktree)], check=True, capture_output=True,
+                       env={**os.environ, "HOME": str(self.home)})
+        self.assertTrue((worktree / ".git").is_file())
+        result = self.wait_through_an_edit("set -u\n", "set -u\nunset UNLOCK_POLL\n",
+                                           script=worktree / "install.sh")
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("is being edited", result.stderr)
+        self.assertFalse((self.home / PLUGIN).exists())
+
+    def test_a_failed_run_in_the_waiter_is_not_retried_every_poll(self):
+        """A restart that does not come back, with the screen free, is tried once, not for a week."""
+        self.stub("omarchy-restart-shell", "exit 1")
+        self.stub("sleep", "exit 0")
+        result = self.run_install(extra={"BARBARIAN_WAITER": "1", "BARBARIAN_UNLOCK_GIVE_UP": "5",
+                                         "BARBARIAN_UNLOCK_POLL": "1"})
+        self.assertEqual(len(self.called("omarchy-restart-shell")), 1, result.stdout + result.stderr)
+        self.assertEqual(self.called("sleep"), [])
+
+    def test_a_shell_stop_that_proves_nothing_is_not_retried_every_poll(self):
+        self.stub("quickshell", "exit 1")
+        self.stub("sleep", "exit 0")
+        result = self.run_install(extra={"BARBARIAN_WAITER": "1", "BARBARIAN_UNLOCK_GIVE_UP": "5",
+                                         "BARBARIAN_UNLOCK_POLL": "1"})
+        self.assertEqual(result.stdout.count("could not prove"), 1, result.stdout)
+        self.assertEqual(self.called("sleep"), [])
+
+    def test_a_slow_restart_in_the_waiter_is_not_retried_every_poll(self):
+        """The shell came back but missed its deadline: still starting, it reads as locked."""
+        restarted = self.tmp / "restarted"
+        self.stub("omarchy-restart-shell", f': > "{restarted}"; : > "$SHELL_ALIVE"; exit 1')
+        self.stub("omarchy-shell", f'[ -e "{restarted}" ] && exit 0; echo \'{{"sessionLocked":false}}\'')
+        self.stub("sleep", "exit 0")
+        result = self.run_install(extra={"BARBARIAN_WAITER": "1", "BARBARIAN_UNLOCK_GIVE_UP": "5",
+                                         "BARBARIAN_UNLOCK_POLL": "1"})
+        self.assertEqual(len(self.called("omarchy-restart-shell")), 1, result.stdout + result.stderr)
+        self.assertEqual(self.called("sleep"), [])
+
+    def test_files_held_back_by_a_short_renumber_still_go_in(self):
+        """The renumber was over by the end of the run; the files it held back are still owed."""
+        renumber = self.tmp / "renumbering"
+        renumber.touch()
+        self.stub("pgrep", 'case "$*" in *quickshell*)'
+                           ' [ -f "$SHELL_ALIVE" ] && echo 1234 || exit 1 ;;'
+                           ' *"-x Hyprland"*) echo 4321 ;;'
+                           f' *ws-renumber*) [ -e "{renumber}" ] && echo 777 || exit 1 ;;'
+                           ' *) exit 1 ;; esac')
+        self.stub("flock", f'rm -f "{renumber}"; exec /usr/bin/flock "$@"')   # it ends mid-run
+        self.stub("sleep", "exit 0")
+        result = self.run_install(extra={"BARBARIAN_WAITER": "1", "BARBARIAN_UNLOCK_POLL": "1"})
+        self.assertIn("held back", result.stdout)
+        self.assertEqual(len(self.called("sleep")), 1, result.stdout + result.stderr)
+        self.assertIn("Panel.qml", self.installed(), result.stdout + result.stderr)
+
+    def test_a_shell_this_installer_took_down_is_started_again(self):
+        """It stopped the shell, the start failed; the next run starts it although none is running."""
+        self.stub("omarchy-restart-shell", "exit 1")
+        self.run_install()
+        stamp = self.home / ".local/state/omarchy/barbarian-restart-owed"
+        self.assertEqual(stamp.read_text().strip(), "stopped")
+        self.assertFalse(self.shell_alive.exists())
+        self.stub("omarchy-restart-shell", ': > "$SHELL_ALIVE"; exit 0')
+        self.calls.write_text("")
+        result = self.run_install()
+        self.assertTrue(self.called("omarchy-restart-shell"), result.stdout)
+        self.assertTrue(self.shell_alive.exists())
+        self.assertFalse(stamp.exists())
+
+    def test_a_failed_start_with_no_shell_to_stop_is_not_retried_every_run(self):
+        """ssh into a machine with no session: nothing was taken down, so nothing is owed a start."""
+        self.shell_alive.unlink()
+        self.stub("omarchy-restart-shell", "exit 1")
+        first = self.run_install()
+        stamp = self.home / ".local/state/omarchy/barbarian-restart-owed"
+        self.assertEqual(len(self.called("omarchy-restart-shell")), 1, first.stdout)
+        self.assertNotEqual(stamp.read_text().strip(), "stopped")
+        self.assertIn("no shell could be started here", first.stdout)
+        self.calls.write_text("")
+        second = self.run_install()
+        self.assertFalse(self.called("omarchy-restart-shell"), second.stdout)
+
+    def test_no_shell_with_no_restart_of_ours_owed_is_left_alone(self):
+        stamp = self.home / ".local/state/omarchy/barbarian-restart-owed"
+        self.run_install()
+        stamp.parent.mkdir(parents=True, exist_ok=True)
+        stamp.touch()                          # owed by a write made under a lock, not by a stop
+        self.shell_alive.unlink(missing_ok=True)
+        self.calls.write_text("")
+        result = self.run_install()
+        self.assertFalse(self.called("omarchy-restart-shell"), result.stdout)
+        self.assertIn("no shell was running", result.stdout)
+        self.assertFalse(stamp.exists())
+
+    def lock_for_polls(self, polls):
+        """The screen stays locked for this many lock checks, then unlocks; sleep returns at once."""
+        count = self.tmp / "lock-count"
+        self.stub("omarchy-shell", f'n=$(( $(cat "{count}" 2>/dev/null || echo 0) + 1 )); echo $n > "{count}"; '
+                                   f'if [ $n -le {polls} ]; then echo \'{{"sessionLocked":true}}\'; '
+                                   'else echo \'{"sessionLocked":false}\'; fi')
+        self.stub("sleep", "exit 0")
+
+    def waiter_sleeps(self):
+        return [line.split()[1] for line in self.called("sleep")]
+
+    def test_the_waiter_polls_quickly_then_slowly(self):
+        """The switch is by time waited, not by polls: 2 s polls switch after 6 s, not 5 polls."""
+        self.lock_for_polls(6)
+        result = self.run_install("--when-unlocked", extra={"BARBARIAN_UNLOCK_POLL": "2",
+                                                            "BARBARIAN_UNLOCK_FAST_FOR": "5"})
+        self.assertEqual(self.waiter_sleeps(), ["2", "2", "2", "30", "30", "30"], result.stdout)
+        self.assertIn("Panel.qml", self.installed(), result.stdout + result.stderr)
+
+    def test_by_default_the_waiter_polls_every_ten_seconds_for_an_hour(self):
+        """It also starts itself afresh on the hour, and the fresh wait carries the time waited."""
+        self.lock_for_polls(362)
+        result = self.run_install("--when-unlocked")
+        self.assertEqual(self.waiter_sleeps(), ["10"] * 360 + ["30", "30"], result.stdout)
+        # One for the fresh wait on the hour, one for the fresh run, one for that run's shell stop.
+        self.assertEqual(len([c for c in self.called("systemctl") if "show-environment" in c]), 3)
+        self.assertIn("Panel.qml", self.installed(), result.stdout + result.stderr)
+
+    def test_by_default_the_waiter_outlasts_a_night(self):
+        """Locked from 17:59 to 08:00, fourteen hours, still ends in an install (3 Nov did not)."""
+        self.lock_for_polls(84)
+        result = self.run_install("--when-unlocked", extra={"BARBARIAN_UNLOCK_POLL": "600",
+                                                            "BARBARIAN_UNLOCK_SLOW_POLL": "600"})
+        self.assertEqual(sum(int(s) for s in self.waiter_sleeps()), 14 * 3600)
+        self.assertNotIn("installs it", result.stdout)
+        self.assertIn("Panel.qml", self.installed(), result.stdout + result.stderr)
+
+    def test_the_waiter_gives_up_at_its_limit(self):
+        self.lock_for_polls(10 ** 6)
+        result = self.run_install("--when-unlocked", extra={"BARBARIAN_UNLOCK_POLL": "1",
+                                                            "BARBARIAN_UNLOCK_FAST_FOR": "3",
+                                                            "BARBARIAN_UNLOCK_SLOW_POLL": "60",
+                                                            "BARBARIAN_UNLOCK_GIVE_UP": "183"})
+        self.assertEqual(self.waiter_sleeps(), ["1", "1", "1", "60", "60", "60"], result.stdout)
+        self.assertIn("installs it", result.stdout)
+        self.assertNotIn("Panel.qml", self.installed())
+
+    def test_odd_waiter_settings_fall_back_instead_of_spinning_or_failing(self):
+        self.lock_for_polls(10)
+        result = self.run_install("--when-unlocked", extra={"BARBARIAN_UNLOCK_POLL": "0",
+                                                            "BARBARIAN_UNLOCK_FAST_FOR": "08",
+                                                            "BARBARIAN_UNLOCK_SLOW_POLL": "abc",
+                                                            "BARBARIAN_UNLOCK_GIVE_UP": "9223372036854775808",
+                                                            "BARBARIAN_UNLOCK_REFRESH": "-5"})
+        self.assertEqual(self.waiter_sleeps(), ["1"] * 8 + ["30", "30"], result.stdout + result.stderr)
+        self.assertNotIn("expected", result.stderr)
+        self.assertNotIn("value too great", result.stderr)
+        self.assertIn("Panel.qml", self.installed(), result.stdout + result.stderr)
+
+    def test_a_restarted_wait_reads_the_lock_through_the_session_display(self):
+        """After a re-login the display and Hyprland have changed; the hourly fresh start reads them."""
+        seen = self.tmp / "displays"
+        count = self.tmp / "lock-count"
+        self.stub("omarchy-shell", f'echo "${{WAYLAND_DISPLAY:-none}}/${{HYPRLAND_INSTANCE_SIGNATURE:-none}}" >> "{seen}"; '
+                                   f'n=$(( $(cat "{count}" 2>/dev/null || echo 0) + 1 )); echo $n > "{count}"; '
+                                   'if [ $n -le 4 ]; then echo \'{"sessionLocked":true}\'; '
+                                   'else echo \'{"sessionLocked":false}\'; fi')
+        self.stub("sleep", "exit 0")
+        self.stub("systemctl", 'case "$*" in *is-active*) exit 3 ;; '
+                               '*show-environment*) printf "WAYLAND_DISPLAY=wayland-9\\nHYPRLAND_INSTANCE_SIGNATURE=new\\n" ;; '
+                               '*) exit 0 ;; esac')
+        result = self.run_install("--when-unlocked", extra={"BARBARIAN_UNLOCK_POLL": "1",
+                                                            "BARBARIAN_UNLOCK_REFRESH": "2",
+                                                            "WAYLAND_DISPLAY": "wayland-1",
+                                                            "HYPRLAND_INSTANCE_SIGNATURE": "old"})
+        displays = seen.read_text().split()
+        self.assertEqual(displays[:2], ["wayland-1/old", "wayland-1/old"], displays)
+        self.assertEqual(set(displays[2:]), {"wayland-9/new"}, displays)
+        self.assertEqual(self.waiter_sleeps(), ["1"] * 4, result.stdout)
+        self.assertIn("Panel.qml", self.installed(), result.stdout + result.stderr)
+
+    def test_a_waiter_kept_on_its_old_code_still_reads_the_new_session(self):
+        """With the installer mid-edit it cannot start afresh, but a re-login still reaches it."""
+        self.commit_the_copy()
+        script = self.repo_copy()
+        script.write_text(script.read_text() + "# an edit not yet committed\n")
+        seen = self.tmp / "displays"
+        count = self.tmp / "lock-count"
+        self.stub("omarchy-shell", f'echo "${{WAYLAND_DISPLAY:-none}}/${{HYPRLAND_INSTANCE_SIGNATURE:-none}}" >> "{seen}"; '
+                                   f'n=$(( $(cat "{count}" 2>/dev/null || echo 0) + 1 )); echo $n > "{count}"; '
+                                   'if [ $n -le 4 ]; then echo \'{"sessionLocked":true}\'; '
+                                   'else echo \'{"sessionLocked":false}\'; fi')
+        self.stub("sleep", "exit 0")
+        self.stub("systemctl", 'case "$*" in *is-active*) exit 3 ;; '
+                               '*show-environment*) printf "WAYLAND_DISPLAY=wayland-9\\nHYPRLAND_INSTANCE_SIGNATURE=new\\n" ;; '
+                               '*) exit 0 ;; esac')
+        result = self.run_install("--when-unlocked", extra={"BARBARIAN_UNLOCK_POLL": "1",
+                                                            "BARBARIAN_UNLOCK_REFRESH": "2",
+                                                            "WAYLAND_DISPLAY": "wayland-1",
+                                                            "HYPRLAND_INSTANCE_SIGNATURE": "old"})
+        displays = seen.read_text().split()
+        self.assertEqual(displays[:2], ["wayland-1/old", "wayland-1/old"], displays)
+        self.assertEqual(set(displays[2:]), {"wayland-9/new"}, displays)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("is being edited", result.stderr)
+
+    def test_the_waiters_own_run_finding_the_screen_busy_again_waits_again(self):
+        """Its unit is still running, so it cannot arm another: it goes back to waiting itself."""
+        sleeps = self.tmp / "sleeps"
+        self.stub("sleep", f'n=$(( $(cat "{sleeps}" 2>/dev/null || echo 0) + 1 )); echo $n > "{sleeps}"')
+        # The waiter's loop sees the screen locked only before its first poll; the run it starts
+        # sees it locked again until the second poll, as if the screen went up a second after.
+        self.stub("omarchy-shell", f'n=$(cat "{sleeps}" 2>/dev/null || echo 0); '
+                                   'if tr "\\0" " " < /proc/$PPID/cmdline | grep -q -- --when-unlocked; '
+                                   'then [ $n -lt 1 ] && locked=true || locked=false; '
+                                   'else [ $n -lt 2 ] && locked=true || locked=false; fi; '
+                                   'echo "{\\"sessionLocked\\":$locked}"')
+        self.stub("systemctl", 'case "$*" in *is-active*) exit 0 ;; *) exit 0 ;; esac')
+        result = self.run_install("--when-unlocked", extra={"BARBARIAN_UNLOCK_POLL": "1"})
+        self.assertIn("held back", result.stdout)
+        self.assertEqual(sleeps.read_text().strip(), "2", result.stdout + result.stderr)
+        self.assertIn("Panel.qml", self.installed(), result.stdout + result.stderr)
 
     def test_the_waiter_installs_once_the_screen_is_free(self):
         result = self.run_install("--when-unlocked")
