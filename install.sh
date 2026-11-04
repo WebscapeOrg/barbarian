@@ -27,7 +27,7 @@
 #    while the session is LOCKED aborts the shell (it recovers, the machine stays
 #    locked, but nothing unattended should do it). So: compare first and skip when
 #    identical, and DEFER the write when the session is locked or unreadable.
-#    Unreadable means locked — a wrong "locked" costs a few hours' delay; a wrong
+#    Unreadable means locked — a wrong "locked" costs a delay; a wrong
 #    "unlocked" costs the crash. The full history of these rules lives in the
 #    machine repo this was extracted from (the private machine repo, private).
 #
@@ -55,8 +55,31 @@ WAIT_UNIT="barbarian-install-pending"
 # A plugin file written while the screen is locked cannot be compiled then: restarting Quickshell
 # would unlock the machine. This file says a restart is owed, and the next free run does it.
 RESTART_STAMP="$HOME/.local/state/omarchy/barbarian-restart-owed"
-UNLOCK_POLL="${BARBARIAN_UNLOCK_POLL:-10}"
-UNLOCK_GIVE_UP="${BARBARIAN_UNLOCK_GIVE_UP:-21600}"   # six hours busy, then leave it to the next run
+# ⚠️ THE WAITER OUTLASTS A NIGHT (2026-11-04). It gave up after six hours, so a commit made in the
+#    evening was still waiting when Dave unlocked in the morning: on 3 November the main machine locked at
+#    17:59 and both waiters gave up (00:01 and 04:38) before he was back. Every ten seconds for the
+#    first hour, then every thirty, for up to a week. The values are whole seconds; anything else
+#    falls back to the default, and a poll is at least a second, so a typo can neither spin the
+#    waiter nor stop it giving up.
+whole_seconds() { # <value> <default> <least>
+  local v="$1"
+  case "$v" in ''|*[!0-9]*) v="$2" ;; esac
+  [ "${#v}" -gt 10 ] && v="$2"           # past 300 years is a typo, and would overflow
+  v=$((10#$v))
+  [ "$v" -lt "$3" ] && v="$3"
+  echo "$v"
+}
+UNLOCK_POLL="$(whole_seconds "${BARBARIAN_UNLOCK_POLL:-}" 10 1)"
+UNLOCK_FAST_FOR="$(whole_seconds "${BARBARIAN_UNLOCK_FAST_FOR:-}" 3600 0)"
+UNLOCK_SLOW_POLL="$(whole_seconds "${BARBARIAN_UNLOCK_SLOW_POLL:-}" 30 1)"
+UNLOCK_GIVE_UP="$(whole_seconds "${BARBARIAN_UNLOCK_GIVE_UP:-}" 604800 0)"
+UNLOCK_REFRESH="$(whole_seconds "${BARBARIAN_UNLOCK_REFRESH:-}" 3600 1)"
+# What one waiter process hands the next (see "THE WAITER STARTS ITSELF AFRESH" below). Read once
+# and taken out of the environment, so nothing this run starts can inherit them.
+IS_WAITER="${BARBARIAN_WAITER:-0}"
+WAITED_BEFORE="$(whole_seconds "${BARBARIAN_UNLOCK_WAITED:-}" 0 0)"
+SLEEP_FIRST="${BARBARIAN_WAIT_AGAIN:-0}"
+unset BARBARIAN_WAITER BARBARIAN_UNLOCK_WAITED BARBARIAN_WAIT_AGAIN
 
 # A plain ssh login has neither of these, and without them the lock cannot be read at all — the
 # shell's own `omarchy-shell` refuses with "OMARCHY_PATH is not set" (2026-09-20). Defaults, not
@@ -111,10 +134,10 @@ panel_open() {
     case "$pid" in ''|*[!0-9]*) continue ;; esac
     [ "$(cat "/proc/$pid/comm" 2>/dev/null)" = Hyprland ] || continue
     asked=1
-    layers="$(HYPRLAND_INSTANCE_SIGNATURE="$(basename "$dir")" timeout 5 hyprctl layers -j 2>/dev/null)"
+    layers="$(HYPRLAND_INSTANCE_SIGNATURE="$(basename "$dir")" timeout -k 1 5 hyprctl layers -j 2>/dev/null)"
     case "$?" in
       0) ;;
-      124) HYPRCTL_HUNG=1; return 0 ;;
+      124|137) HYPRCTL_HUNG=1; return 0 ;;
       *) return 0 ;;
     esac
     case "$layers" in '['*|'{'*) ;; *) return 0 ;; esac
@@ -134,30 +157,88 @@ busy() { session_locked || panel_open || renumbering; }
 
 # `--when-unlocked` is the waiter: wait for the screen (and the panel, and any renumber), then
 # install as usual.
+# ⚠️ THE WAITER STARTS ITSELF AFRESH (2026-11-04). bash reads a script as it runs and keeps the
+#    environment it started with, so a waiter that carried on would run the installer, and reach
+#    the session through the display and Hyprland signature, as they were when it began: after a
+#    commit that fixed either, or a re-login, for up to a week. And if the file had been rewritten
+#    in place, it would run whatever now sits at its old byte offset (a test of that ran "no:
+#    command not found"). So once the screen is free it runs the installer as it is now, and every
+#    hour of waiting it starts its own wait afresh, carrying the time waited; both keep this PID,
+#    so the unit stays the same one. Only a committed installer is run: one that does not parse,
+#    or has changes not yet committed, may be half edited and could stop the shell and break
+#    before the restart. Then nothing is installed, and the edit's own commit installs it.
+installer_committed() {
+  "$BASH" -n "$HERE/install.sh" 2>/dev/null || return 1
+  git -C "$HERE" rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 0   # a worktree too
+  git -C "$HERE" diff --quiet HEAD -- install.sh 2>/dev/null
+  [ "$?" != 1 ]
+}
+read_session() { # the display and Hyprland the session has now, not the ones this process began with
+  local session var value
+  session="$(systemctl --user show-environment 2>/dev/null)"
+  for var in WAYLAND_DISPLAY HYPRLAND_INSTANCE_SIGNATURE; do
+    value="$(sed -n "s/^$var=//p" <<<"$session" | tail -n 1)"
+    if [ -n "$value" ]; then export "$var=$value"; else unset "$var"; fi
+  done
+}
+start_afresh() { # [--when-unlocked]
+  read_session
+  exec env BARBARIAN_WAITER=1 BARBARIAN_UNLOCK_WAITED="$waited" "$BASH" "$HERE/install.sh" "$@"
+}
 if [ "${1:-}" = "--when-unlocked" ]; then
-  waited=0
-  while busy; do
+  waited="$WAITED_BEFORE"
+  fresh=0
+  while :; do
+    if [ "$SLEEP_FIRST" != 1 ] && ! busy; then
+      installer_committed && start_afresh
+      echo "barbarian: install.sh is being edited (it does not parse, or has changes not yet committed) — nothing installed; its commit installs it" >&2
+      exit 1
+    fi
+    SLEEP_FIRST=0
     if [ "$waited" -ge "$UNLOCK_GIVE_UP" ]; then
-      echo "barbarian: six hours locked or busy; the next commit, run or self-heal installs it"
+      echo "barbarian: still locked or busy after a week of waiting; the next commit, run or self-heal installs it"
       exit 0
     fi
-    sleep "$UNLOCK_POLL"
-    waited=$((waited + UNLOCK_POLL))
+    poll="$UNLOCK_POLL"
+    [ "$waited" -ge "$UNLOCK_FAST_FOR" ] && poll="$UNLOCK_SLOW_POLL"
+    sleep "$poll"
+    waited=$((waited + poll))
+    fresh=$((fresh + poll))
     HYPRCTL_HUNG=0                       # each poll asks afresh
+    if [ "$fresh" -ge "$UNLOCK_REFRESH" ]; then
+      installer_committed && start_afresh --when-unlocked
+      read_session                       # an installer being edited still gets the new session
+      fresh=0
+    fi
   done
-  # The wait can last hours, and the installer may have been committed again meanwhile. bash reads
-  # a script as it runs, so carrying on would run the old logic, or, if the file was rewritten in
-  # place, whatever now sits at the old byte offset. Starting it afresh runs the installer as it is
-  # now. The process keeps its PID, so it is still the waiter's unit and arms no second one. A file
-  # caught half edited is not run: it could stop the shell and break before the restart.
-  if ! "$BASH" -n "$HERE/install.sh" 2>/dev/null; then
-    echo "barbarian: install.sh does not parse right now (mid-edit?) — nothing installed; the next commit or run installs it" >&2
-    exit 1
-  fi
-  exec "$BASH" "$HERE/install.sh"
 fi
 
-arm_waiter() {
+# The waiter's own run, finding the screen busy again (the panel opened a second after the
+# unlock), cannot arm a waiter, since its own unit is still running and "one waiter is enough". So
+# it waits again itself, after at least one poll, so it never spins. Only for files held back
+# because the screen was busy (`arm_waiter held`): a run that failed (`arm_waiter failed`: a stop
+# it could not prove, a restart that did not come back) is left to the next commit or run, as
+# before, because retrying it every poll would restart the shell over and over. Whether the screen
+# is busy at the end cannot tell the two apart: a shell still starting after a slow restart cannot
+# answer, and reads as locked. A stop signal ends the run for good; it must not become a wait.
+WAIT_AGAIN=0
+wait_again() {
+  if ! installer_committed; then
+    echo "barbarian: install.sh is being edited (it does not parse, or has changes not yet committed) — nothing more installed; its commit installs it" >&2
+    return
+  fi
+  exec env BARBARIAN_WAIT_AGAIN=1 BARBARIAN_UNLOCK_WAITED="$WAITED_BEFORE" "$BASH" "$HERE/install.sh" --when-unlocked
+}
+trap 'if [ "$WAIT_AGAIN" = 1 ]; then wait_again; fi' EXIT
+trap 'WAIT_AGAIN=0; exit 129' HUP
+trap 'WAIT_AGAIN=0; exit 130' INT
+trap 'WAIT_AGAIN=0; exit 143' TERM
+
+arm_waiter() { # held | failed
+  if [ "$IS_WAITER" = 1 ]; then
+    [ "${1:-failed}" = held ] && WAIT_AGAIN=1
+    return 0
+  fi
   command -v systemd-run >/dev/null 2>&1 || return 0
   systemctl --user is-active --quiet "$WAIT_UNIT" 2>/dev/null && return 0   # one waiter is enough
   systemd-run --user --collect --quiet --unit="$WAIT_UNIT" \
@@ -165,10 +246,17 @@ arm_waiter() {
     "$HERE/install.sh" --when-unlocked >/dev/null 2>&1
 }
 
-# Nothing running is nothing to restart: the next shell to start reads the new files anyway.
+# Nothing running is nothing to restart: the next shell to start reads the new files anyway. Except
+# when this installer stopped it and could not start it again (the stamp says "stopped"): then no
+# shell means Dave has no bar and no lock screen, so it is started.
 SHELL_NOTE=""
 restart_shell() {
   if ! pgrep -u "$(id -u)" -x quickshell >/dev/null 2>&1; then
+    if [ "$(cat "$RESTART_STAMP" 2>/dev/null)" = stopped ]; then
+      omarchy-restart-shell >/dev/null 2>&1 || return 1
+      SHELL_NOTE="and the shell, down since an earlier install, is started again"
+      return 0
+    fi
     SHELL_NOTE="and no shell was running, so the next one to start shows the panel"
     return 0
   fi
@@ -318,7 +406,7 @@ if [ "$plugin_write_pending" = 1 ] && ! busy; then
   if [ "$killed" = 1 ] || ! pgrep -u "$(id -u)" -x quickshell >/dev/null 2>&1; then
     SHELL_STOPPED=1
   else
-    arm_waiter
+    arm_waiter failed
     echo "barbarian: could not prove the shell was stopped (no kill landed and one is running) — held back; the next run tries again"
     exit 0
   fi
@@ -540,7 +628,7 @@ if twins:
 PY
 ) 9>"$HOME/.config/omarchy/.bar-arrange-apply.lock"
 if [ "$?" = 3 ]; then
-  arm_waiter
+  arm_waiter held
   echo "barbarian: a hidden widget's renamed id waits for the panel to close"
 fi
 
@@ -558,11 +646,18 @@ if [ "$SHELL_STOPPED" = 1 ]; then
     rm -f "$RESTART_STAMP"
     SHELL_NOTE="and the shell restarted for the panel"
   else
-    # The screen went up while it was down; the waiter finishes the job.
+    # The start failed. When this run's kill took the shell down, the stamp says so, and the next
+    # run starts it even though none is running. When there was no shell to stop (ssh with no
+    # session), nothing was taken down, and a start that cannot work is not retried every run.
     mkdir -p "$(dirname "$RESTART_STAMP")"
-    : > "$RESTART_STAMP"
-    arm_waiter
-    SHELL_NOTE="; the shell restarts when the screen is free"
+    if [ "$killed" = 1 ]; then
+      echo stopped > "$RESTART_STAMP"
+      SHELL_NOTE="but the shell could not be started; the next commit or run tries again"
+    else
+      [ -f "$RESTART_STAMP" ] || : > "$RESTART_STAMP"
+      SHELL_NOTE="and no shell could be started here, so the next one to start shows the panel"
+    fi
+    arm_waiter failed
   fi
 fi
 
@@ -572,24 +667,33 @@ if [ "$DEFERRED" -gt 0 ]; then
   # The screen went up part way through: some files are in, the rest are not. A panel file among
   # the ones that went in is owed a restart the waiter's own run would not know about, because by
   # then only the files it has left to write look changed.
-  if [ "$PLUGIN_CHANGED" = 1 ]; then
+  if [ "$PLUGIN_CHANGED" = 1 ] && [ ! -f "$RESTART_STAMP" ]; then
     mkdir -p "$(dirname "$RESTART_STAMP")"
     : > "$RESTART_STAMP"
   fi
-  arm_waiter
+  arm_waiter held
+  [ "$SHELL_STOPPED" = 1 ] && echo "barbarian: the files that went in did so $SHELL_NOTE"
   echo "barbarian: $DEFERRED file(s) held back — the screen is locked or the panel is open; they go in the moment it clears"
 elif [ "$SHELL_STOPPED" = 1 ]; then
   echo "barbarian: $INSTALLED to $PLUGIN_DIR and $ENGINE_DST, $SHELL_NOTE"
 elif [ "$RESTART_OWED" = 1 ]; then
-  if ! busy && restart_shell; then
+  was_busy=0
+  busy && was_busy=1
+  if [ "$was_busy" = 0 ] && restart_shell; then
     rm -f "$RESTART_STAMP"
     echo "barbarian: $INSTALLED to $PLUGIN_DIR and $ENGINE_DST, $SHELL_NOTE"
   else
-    # The screen went up between the write and the restart; the waiter finishes the job.
+    # The screen went up between the write and the restart, so the restart waits for it; or the
+    # restart was tried and failed, which the next commit or run tries again.
     mkdir -p "$(dirname "$RESTART_STAMP")"
-    : > "$RESTART_STAMP"
-    arm_waiter
-    echo "barbarian: $INSTALLED to $PLUGIN_DIR and $ENGINE_DST; the shell restarts when the screen is free"
+    [ -f "$RESTART_STAMP" ] || : > "$RESTART_STAMP"
+    if [ "$was_busy" = 1 ]; then
+      arm_waiter held
+      echo "barbarian: $INSTALLED to $PLUGIN_DIR and $ENGINE_DST; the shell restarts when the screen is free"
+    else
+      arm_waiter failed
+      echo "barbarian: $INSTALLED to $PLUGIN_DIR and $ENGINE_DST, but the shell could not be restarted; the next commit or run tries again"
+    fi
   fi
 else
   echo "barbarian: $INSTALLED to $PLUGIN_DIR and $ENGINE_DST"
