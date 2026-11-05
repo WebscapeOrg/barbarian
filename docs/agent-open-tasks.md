@@ -11,3 +11,4 @@ Dave chose “Hide it again — back to how your bar was before the 2 November u
 - 2026-11-05 01:26 · Added by @barbarian for @barbarian.
 - 2026-11-05 01:26 · Taken by @barbarian.
 - 2026-11-05 01:26 · Parked by @barbarian: Waiting for Calendar’s reviewed Enterprise install and an unlocked screen; Q-105 is already decided. Enterprise and DS9 still list skylark on the bar.
+- 2026-11-05 05:17 · Parked by @barbarian: Q-105 is settled. Waiting for Calendar’s reviewed Enterprise install and an unlocked screen; live registry still lists skylark and the visible calendar entry is unchanged.
