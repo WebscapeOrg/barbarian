@@ -63,3 +63,12 @@ Dave ran /previously: read the newest Peacock handoff for this repo (P-008) and 
 - 2026-11-03 17:12 · Added by @barbarian for @barbarian.
 - 2026-11-03 17:12 · Taken by @barbarian.
 - 2026-11-03 17:12 · Done by @barbarian: Took over as ⚔️ @barbarian in Claude Code from P-008. Checked: main = origin at 37172f7, installed panel and engine match source, no open carrots, questions or legwork, screen unlocked. The restyler had been archived out of Downloads; it is now docs/barbarian-restyler.html. http://100.124.40.42:3012/peacock/barbarian/P-008
+
+## C-006 Take over Barbarian from the refused Claude session
+
+Take over as ⚔️ Barbarian @barbarian from P-016, reconstruct the unfinished work from the previous transcript, check the present state, and continue it.
+
+- 2026-11-05 01:24 · Added by @barbarian for @barbarian.
+- 2026-11-05 01:24 · Received by @barbarian.
+- 2026-11-05 01:25 · Taken by @barbarian.
+- 2026-11-05 01:28 · Done by @barbarian: Took over @barbarian from P-016. Enterprise’s pending update is installed and verified; 198 Python tests and 46 Qt checks passed. Q-105 continues as parked C-007, waiting for Calendar’s installation and unlock. http://100.124.40.42:3012/peacock/barbarian/P-017
