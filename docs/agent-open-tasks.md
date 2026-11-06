@@ -12,3 +12,6 @@ Dave chose “Hide it again — back to how your bar was before the 2 November u
 - 2026-11-05 01:26 · Taken by @barbarian.
 - 2026-11-05 01:26 · Parked by @barbarian: Waiting for Calendar’s reviewed Enterprise install and an unlocked screen; Q-105 is already decided. Enterprise and DS9 still list skylark on the bar.
 - 2026-11-05 05:17 · Parked by @barbarian: Q-105 is settled. Waiting for Calendar’s reviewed Enterprise install and an unlocked screen; live registry still lists skylark and the visible calendar entry is unchanged.
+- 2026-11-06 06:41 · Ready by @barbarian: Calendar’s reviewed update is installed and Enterprise is unlocked; applying Q-105 now.
+- 2026-11-06 06:44 · Progress by @barbarian: Enterprise hidden and verified; checking ship propagation
+- 2026-11-06 06:48 · Parked by @barbarian: Enterprise’s calendar icon is hidden and independently verified; hidden entry and all other settings are preserved (P-018). Waiting for Enterprise’s approved DS9 mirror sync and Voyager to reconnect for propagation checks; Voyager SSH timed out.
