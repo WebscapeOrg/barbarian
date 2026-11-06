@@ -80,3 +80,11 @@ Dave requested a session handoff. Write and publish a Peacock handoff describing
 - 2026-11-06 14:52 · Added by @barbarian for @barbarian.
 - 2026-11-06 14:52 · Taken by @barbarian.
 - 2026-11-06 14:52 · Done by @barbarian: Published P-019 with current C-007 evidence, resume details, and Voyager as the first verification step. http://100.124.40.42:3012/peacock/barbarian/P-019
+
+## C-009 Take over as @barbarian from P-019 (/previously)
+
+/previously
+
+- 2026-11-06 15:05 · Added by @barbarian for @barbarian.
+- 2026-11-06 15:05 · Taken by @barbarian.
+- 2026-11-06 15:08 · Done by @barbarian: Took over as ⚔️ @barbarian in Antigravity (Gemini 4 Argon (Low)) from P-019. Verified Enterprise and DS9 calendar hide and running bar geometry; Voyager remains offline (tailscale last seen 2d ago, SSH timed out), so C-007 stays parked. http://100.124.40.42:3012/peacock/barbarian/P-019
