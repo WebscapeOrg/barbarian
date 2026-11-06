@@ -72,3 +72,11 @@ Take over as ⚔️ Barbarian @barbarian from P-016, reconstruct the unfinished 
 - 2026-11-05 01:24 · Received by @barbarian.
 - 2026-11-05 01:25 · Taken by @barbarian.
 - 2026-11-05 01:28 · Done by @barbarian: Took over @barbarian from P-016. Enterprise’s pending update is installed and verified; 198 Python tests and 46 Qt checks passed. Q-105 continues as parked C-007, waiting for Calendar’s installation and unlock. http://100.124.40.42:3012/peacock/barbarian/P-017
+
+## C-008 Publish Barbarian handoff for Voyager calendar check
+
+Dave requested a session handoff. Write and publish a Peacock handoff describing the current C-007 state and the next Voyager verification.
+
+- 2026-11-06 14:52 · Added by @barbarian for @barbarian.
+- 2026-11-06 14:52 · Taken by @barbarian.
+- 2026-11-06 14:52 · Done by @barbarian: Published P-019 with current C-007 evidence, resume details, and Voyager as the first verification step. http://100.124.40.42:3012/peacock/barbarian/P-019
