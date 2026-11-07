@@ -88,3 +88,11 @@ Dave requested a session handoff. Write and publish a Peacock handoff describing
 - 2026-11-06 15:05 · Added by @barbarian for @barbarian.
 - 2026-11-06 15:05 · Taken by @barbarian.
 - 2026-11-06 15:08 · Done by @barbarian: Took over as ⚔️ @barbarian in Antigravity (Gemini 4 Argon (Low)) from P-019. Verified Enterprise and DS9 calendar hide and running bar geometry; Voyager remains offline (tailscale last seen 2d ago, SSH timed out), so C-007 stays parked. http://100.124.40.42:3012/peacock/barbarian/P-019
+
+## C-010 Publish Barbarian handoff (/tbc)
+
+/tbc
+
+- 2026-11-07 06:38 · Added by @barbarian for @barbarian.
+- 2026-11-07 06:38 · Taken by @barbarian.
+- 2026-11-07 06:40 · Done by @barbarian: Published P-020 handoff with full session narrative, DS9 plugins[] verification, resume command, and Voyager verification steps for C-007. http://100.124.40.42:3012/peacock/barbarian/P-020
