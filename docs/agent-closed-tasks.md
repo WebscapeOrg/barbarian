@@ -104,3 +104,11 @@ Dave typed /previously: take over as @barbarian from the newest handoff (P-020).
 - 2026-11-07 06:55 · Added by @barbarian for @barbarian.
 - 2026-11-07 06:56 · Taken by @barbarian.
 - 2026-11-07 06:56 · Done by @barbarian: Took over as @barbarian from P-020. Enterprise still has the calendar hidden and enabled. Voyager is still offline, so C-007 stays parked. http://100.124.40.42:3012/peacock/barbarian/P-021
+
+## C-012 Take over as @barbarian from P-020 (/previously)
+
+Dave ran /previously: read the newest handoff (P-020) and take over as ⚔️ @barbarian in Caboodle from the previous session.
+
+- 2026-11-07 07:10 · Added by @barbarian for @barbarian.
+- 2026-11-07 07:10 · Taken by @barbarian.
+- 2026-11-07 07:10 · Done by @barbarian: Took over as @barbarian on Claude Opus 5.5. Checked at 07:12: Enterprise still has the calendar hidden (one hidden copy, magpie-calendar in plugins[], engine running, no calendar in the live bar). Voyager is still offline (Tailscale last saw it 2 days ago, SSH timed out), so C-007 stays parked. http://100.124.40.42:3012/peacock/barbarian/P-020
