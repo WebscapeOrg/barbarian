@@ -96,3 +96,11 @@ Dave requested a session handoff. Write and publish a Peacock handoff describing
 - 2026-11-07 06:38 · Added by @barbarian for @barbarian.
 - 2026-11-07 06:38 · Taken by @barbarian.
 - 2026-11-07 06:40 · Done by @barbarian: Published P-020 handoff with full session narrative, DS9 plugins[] verification, resume command, and Voyager verification steps for C-007. http://100.124.40.42:3012/peacock/barbarian/P-020
+
+## C-011 Take over as @barbarian from P-020 (/previously)
+
+Dave typed /previously: take over as @barbarian from the newest handoff (P-020).
+
+- 2026-11-07 06:55 · Added by @barbarian for @barbarian.
+- 2026-11-07 06:56 · Taken by @barbarian.
+- 2026-11-07 06:56 · Done by @barbarian: Took over as @barbarian from P-020. Enterprise still has the calendar hidden and enabled. Voyager is still offline, so C-007 stays parked. http://100.124.40.42:3012/peacock/barbarian/P-021
