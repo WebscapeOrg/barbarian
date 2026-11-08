@@ -292,13 +292,15 @@ PLACEHOLDER_TITLE = re.compile(r"^Barbarian · missing (\S+) · ([0-9a-f]{6})(?:
 # A recording made under the old title is the same app, so "Skylark" is read as Magpie Calendar
 # everywhere a title is matched, and Dave's recordings are never rewritten. Until every machine
 # has the renamed plugin the summon falls back to the old id when the shell answers "unknown"
-# for the new one, so the two installs can land in either order.
+# for the new one, so the two installs can land in either order. Magpie became Magpie Mail on
+# 2026-11-08 (Dave's magpie C-065, hobnob #9345): only its title changed, "🐦 Magpie" to
+# "✉️ Magpie Mail", and its plugin id stays magpie, so the summon needs no fallback.
 SUMMONS = {
-    "🐦 Magpie": "omarchy-shell shell summon magpie '{}'",
+    "✉️ Magpie Mail": "omarchy-shell shell summon magpie '{}'",
     "Magpie Calendar": ("sh -c '[ \"$(omarchy-shell shell summon magpie-calendar)\" = ok ]"
                         " || omarchy-shell shell summon skylark'"),
 }
-SUMMONS_ALIASES = {"Skylark": "Magpie Calendar"}
+SUMMONS_ALIASES = {"Skylark": "Magpie Calendar", "🐦 Magpie": "✉️ Magpie Mail"}
 
 
 def summons_title(win):

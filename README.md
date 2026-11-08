@@ -119,16 +119,17 @@ keeps in line.
 
 ## Reptile features
 
-Saved layouts can reopen Magpie Calendar and Magpie through the shell. Magpie Calendar was
-called Skylark until 3 November 2026; recordings that saved it as Skylark reopen it without
-being saved again, including recordings made before reopening was supported. While a machine
+Saved layouts can reopen Magpie Calendar and Magpie Mail through the shell. Magpie Calendar was
+called Skylark until 3 November 2026, and Magpie Mail was called Magpie until 8 November 2026;
+recordings that saved either under its old name reopen it without being saved again, including
+recordings made before reopening was supported. While a machine
 still has the plugin under its old id, Barbarian summons `skylark` when the shell does not know
 `magpie-calendar`. If Magpie Calendar is already open on another workspace, restore brings that
 window back.
 
-Links that Magpie opens in their own window are left alone. Recording a desk skips them,
+Links that Magpie Mail opens in their own window are left alone. Recording a desk skips them,
 closing extra windows never closes them, and a restore never takes one for a window it is
-reopening. Magpie opens every link through its own `link-window.html` page, so each link
+reopening. Magpie Mail opens every link through its own `link-window.html` page, so each link
 window's class contains `_link-window.html-`, and that is how Barbarian knows one.
 
 Open **HYPER+L → Features**, or use the **Reptile** switches in Caboodle, to turn behaviors

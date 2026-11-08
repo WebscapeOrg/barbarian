@@ -44,10 +44,15 @@ class Summons(unittest.TestCase):
     """Quickshell plugin windows share one class, so — like the placeholders — they are known
     by title and summoned through the shell (Magpie, 2026-10-15, Dave's Phase 3)."""
 
-    def test_a_magpie_window_is_summoned_by_its_title(self):
-        win = {"class": "org.quickshell", "title": "🐦 Magpie — Inbox"}
-        self.assertEqual(engine.launcher_for_win(win, 3),
-                         "omarchy-shell shell summon magpie '{}'")
+    def test_a_magpie_mail_window_is_summoned_by_its_title(self):
+        """Magpie is Magpie Mail since 2026-11-08 (magpie C-065): the new title and the old one
+        both reopen it through the unchanged plugin id."""
+        for title in ("✉️ Magpie Mail", "✉️ Magpie Mail — Inbox", "🐦 Magpie", "🐦 Magpie — Inbox"):
+            with self.subTest(title=title):
+                win = {"class": "org.quickshell", "title": title}
+                self.assertEqual(engine.launcher_for_win(win, 3),
+                                 "omarchy-shell shell summon magpie '{}'")
+                self.assertEqual(engine.app_identity(win), "✉️ Magpie Mail")
 
     def test_magpie_calendar_is_summoned_without_toggling_it_closed(self):
         """Skylark is Magpie Calendar since 2026-11-03: either title reopens it, through the new
@@ -104,7 +109,9 @@ class WindowIdentity(unittest.TestCase):
                                  ("Skylark", "🐦 Magpie"), ("🐦 Magpie", "Skylark"),
                                  ("Skylark", "Holodeck"), ("Holodeck", "Skylark"),
                                  ("Magpie Calendar", "🐦 Magpie"), ("🐦 Magpie", "Magpie Calendar"),
-                                 ("Magpie Calendar", "Holodeck"), ("Holodeck", "Magpie Calendar")]:
+                                 ("Magpie Calendar", "Holodeck"), ("Holodeck", "Magpie Calendar"),
+                                 ("✉️ Magpie Mail", "Magpie Calendar"), ("Skylark", "✉️ Magpie Mail"),
+                                 ("✉️ Magpie Mail", "Holodeck"), ("Holodeck", "✉️ Magpie Mail")]:
             with self.subTest(recorded=recorded, actual=actual):
                 self.assertEqual(engine.assign([{"win": self.win(recorded)}],
                                                [self.win(actual)]), {})
@@ -114,7 +121,9 @@ class WindowIdentity(unittest.TestCase):
                                  ("Skylark", "🐦 Magpie"), ("🐦 Magpie", "Skylark"),
                                  ("Skylark", "Holodeck"), ("Holodeck", "Skylark"),
                                  ("Magpie Calendar", "🐦 Magpie"), ("🐦 Magpie", "Magpie Calendar"),
-                                 ("Magpie Calendar", "Holodeck"), ("Holodeck", "Magpie Calendar")]:
+                                 ("Magpie Calendar", "Holodeck"), ("Holodeck", "Magpie Calendar"),
+                                 ("✉️ Magpie Mail", "Magpie Calendar"), ("Skylark", "✉️ Magpie Mail"),
+                                 ("✉️ Magpie Mail", "Holodeck"), ("Holodeck", "✉️ Magpie Mail")]:
             with self.subTest(recorded=recorded, actual=actual):
                 self.assertEqual(engine.match_floats([self.win(recorded)],
                                                      [self.win(actual)]), {})
@@ -128,7 +137,9 @@ class WindowIdentity(unittest.TestCase):
         self.assertEqual(engine.match_floats([recorded], [actual]), {0: actual})
 
     def test_a_skylark_recording_matches_the_renamed_window(self):
-        for recorded, actual in [("Skylark", "Magpie Calendar"), ("Magpie Calendar", "Skylark")]:
+        for recorded, actual in [("Skylark", "Magpie Calendar"), ("Magpie Calendar", "Skylark"),
+                                 ("🐦 Magpie — Inbox", "✉️ Magpie Mail — Inbox"),
+                                 ("✉️ Magpie Mail", "🐦 Magpie")]:
             with self.subTest(recorded=recorded, actual=actual):
                 window = self.win(actual, "0x2")
                 self.assertEqual(engine.assign([{"win": self.win(recorded)}], [window]), {0: window})
@@ -143,13 +154,13 @@ class WindowIdentity(unittest.TestCase):
     def test_the_cull_keeps_the_recorded_plugin_and_closes_the_stranger(self):
         """close_extras buckets by identity: with Magpie recorded and a stray second shell
         window on the desk, the stranger goes and Magpie stays."""
-        magpie = self.win("🐦 Magpie — Inbox", "0xkeep")
+        magpie = self.win("✉️ Magpie Mail — Inbox", "0xkeep")
         stray = self.win("Holodeck", "0xclose")
         closed = []
         with mock.patch.object(engine, "on_ws", return_value=[magpie, stray]), \
              mock.patch.object(engine, "dispatch", side_effect=lambda cmd: closed.append(cmd)), \
              mock.patch.object(engine, "wait_until", return_value=True):
-            engine.close_extras(4, {"🐦 Magpie": 1})
+            engine.close_extras(4, {"✉️ Magpie Mail": 1})
         self.assertEqual(len(closed), 1)
         self.assertIn("0xclose", closed[0])
         self.assertNotIn("0xkeep", closed[0])
@@ -158,12 +169,13 @@ class WindowIdentity(unittest.TestCase):
         """Within one identity the placeholder still goes first — the recorded window keeps
         its place (the original placeholder-removal rule, unchanged)."""
         placeholder = dict(self.win("🐦 Magpie — Inbox", "0xph"), placeholder="ab12cd")
-        real = self.win("🐦 Magpie — Inbox", "0xreal")
+        real = self.win("✉️ Magpie Mail — Inbox", "0xreal")
         closed = []
         with mock.patch.object(engine, "on_ws", return_value=[placeholder, real]), \
              mock.patch.object(engine, "dispatch", side_effect=lambda cmd: closed.append(cmd)), \
              mock.patch.object(engine, "wait_until", return_value=True):
-            engine.close_extras(4, {"🐦 Magpie": 1})
+            engine.close_extras(4, {engine.app_identity({"class": "org.quickshell",
+                                                         "title": "🐦 Magpie"}): 1})
         self.assertEqual(len(closed), 1)
         self.assertIn("0xph", closed[0])
 
