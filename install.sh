@@ -556,11 +556,12 @@ PY
 fi
 
 # ⚠️ A WIDGET HIDDEN UNDER AN OLD NAME FOLLOWS ITS PLUGIN'S RENAME (2026-11-03, hobnob #7371).
-# Skylark became Magpie Calendar. The calendar's own installer renames its entry in shell.json,
-# but not here: this sidecar is Barbarian's alone. So an entry hidden as `skylark` takes the new
-# id, still hidden and in the same spot, and showing it again brings back the calendar instead of
+# Skylark became Magpie Calendar (2026-11-03, hobnob #7371) and Magpie became Magpie Mail (2026-11-08,
+# magpie Q-017, hobnob #9376). The plugin's own installer renames its entry in shell.json,
+# but not here: this sidecar is Barbarian's alone. So an entry hidden under an old id takes the new
+# id, still hidden and in the same spot, and showing it again brings back the renamed plugin instead of
 # a widget for a plugin that no longer exists. Only the sidecar: the entry on the bar belongs to
-# the calendar's installer, and renaming it before the new plugin is in would blank it. Either
+# the plugin's installer, and renaming it before the new plugin is in would blank it. Either
 # order of the two installs ends the same. An old entry whose new id is already hidden is a twin,
 # and goes. Only the panel reads this file (the shell never does), so a locked screen is no
 # reason to wait; a panel on screen is, since it would write the old id back when it closes —
@@ -574,7 +575,7 @@ flock 9
 PANEL_OPEN="$PANEL_OPEN" python3 - <<'PY'
 import json, os, sys, tempfile
 
-RENAMED = {"skylark": "magpie-calendar"}
+RENAMED = {"skylark": "magpie-calendar", "magpie": "magpie-mail"}
 LANES = ("left", "center", "right")
 path = os.path.expanduser("~/.config/omarchy/bar-hidden.json")
 

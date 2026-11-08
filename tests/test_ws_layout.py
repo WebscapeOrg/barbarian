@@ -45,13 +45,16 @@ class Summons(unittest.TestCase):
     by title and summoned through the shell (Magpie, 2026-10-15, Dave's Phase 3)."""
 
     def test_a_magpie_mail_window_is_summoned_by_its_title(self):
-        """Magpie is Magpie Mail since 2026-11-08 (magpie C-065): the new title and the old one
-        both reopen it through the unchanged plugin id."""
+        """Magpie is Magpie Mail since 2026-11-08 (magpie C-065 and Q-017): the new title and the old
+        one both reopen it through the new plugin id first and the old one while the shell does
+        not know the new one yet."""
         for title in ("✉️ Magpie Mail", "✉️ Magpie Mail — Inbox", "🐦 Magpie", "🐦 Magpie — Inbox"):
             with self.subTest(title=title):
                 win = {"class": "org.quickshell", "title": title}
-                self.assertEqual(engine.launcher_for_win(win, 3),
-                                 "omarchy-shell shell summon magpie '{}'")
+                command = engine.launcher_for_win(win, 3)
+                self.assertEqual(command, engine.SUMMONS["✉️ Magpie Mail"])
+                self.assertIn("omarchy-shell shell summon magpie-mail", command)
+                self.assertIn("|| omarchy-shell shell summon magpie", command)
                 self.assertEqual(engine.app_identity(win), "✉️ Magpie Mail")
 
     def test_magpie_calendar_is_summoned_without_toggling_it_closed(self):
@@ -306,6 +309,32 @@ class SkylarkRestoration(unittest.TestCase):
                 self.assertEqual(engine.restore(4), 0)
         self.assertEqual([c.args[0] for c in launch.call_args_list],
                          [f"setsid {engine.SUMMONS['Magpie Calendar']} >/dev/null 2>&1 &"])
+
+    def test_a_recording_with_the_old_magpie_summon_reopens_through_the_new_one(self):
+        """Dave's Messaging recording stores Magpie's launch as the old summon string; the live
+        launcher wins over it, so the renamed plugin is summoned, never the old id alone."""
+        record = {"workspace": 4, "name": "Messaging", "format": 2, "floating": [],
+                  "windows": [{**self.window, "title": "🐦 Magpie",
+                               "launch": "omarchy-shell shell summon magpie '{}'",
+                               "after": None, "side": None, "share": None}]}
+        with tempfile.TemporaryDirectory(prefix="barbarian-magpie-record-") as temporary:
+            path = pathlib.Path(temporary) / "ws4.json"
+            path.write_text(json.dumps(record))
+            with mock.patch.object(engine, "SNAP_DIR", temporary), \
+                 mock.patch.object(engine, "on_ws", return_value=[]), \
+                 mock.patch.object(engine, "clients", return_value=[]), \
+                 mock.patch.object(engine, "stand_on"), \
+                 mock.patch.object(engine, "default_split_ratio", return_value=1), \
+                 mock.patch.object(engine, "set_default_split_ratio"), \
+                 mock.patch.object(engine, "dispatch"), \
+                 mock.patch.object(engine, "place_new", return_value=self.window), \
+                 mock.patch.object(engine.subprocess, "Popen") as launch, \
+                 mock.patch.object(engine, "card"), mock.patch.object(engine, "card_down"), \
+                 mock.patch.object(engine, "ANNOUNCE", False), \
+                 contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(engine.restore(4), 0)
+        self.assertEqual([c.args[0] for c in launch.call_args_list],
+                         [f"setsid {engine.SUMMONS['✉️ Magpie Mail']} >/dev/null 2>&1 &"])
 
     def test_a_new_unrelated_shell_window_cannot_be_taken_for_skylark(self):
         def place(predicate, ws, timeout, floating=False):

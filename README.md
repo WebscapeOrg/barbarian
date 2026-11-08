@@ -123,8 +123,8 @@ Saved layouts can reopen Magpie Calendar and Magpie Mail through the shell. Magp
 called Skylark until 3 November 2026, and Magpie Mail was called Magpie until 8 November 2026;
 recordings that saved either under its old name reopen it without being saved again, including
 recordings made before reopening was supported. While a machine
-still has the plugin under its old id, Barbarian summons `skylark` when the shell does not know
-`magpie-calendar`. If Magpie Calendar is already open on another workspace, restore brings that
+still has a plugin under its old id, Barbarian falls back to the old id when the shell does not know
+the new one (`skylark` for `magpie-calendar`, `magpie` for `magpie-mail`). If Magpie Calendar is already open on another workspace, restore brings that
 window back.
 
 Links that Magpie Mail opens in their own window are left alone. Recording a desk skips them,
@@ -170,7 +170,7 @@ one. The `reptile-feature status|on|off <name>` adapter supplies Caboodle's swit
   On close it writes the new order straight into Omarchy's `shell.json` (whole
   entries move, so each widget's per-widget settings travel with it) and parks
   hidden widget ids in `~/.config/omarchy/bar-hidden.json`. The installer keeps a short list of
-  plugins that changed their id (so far only Skylark, now `magpie-calendar`) and renames their
+  plugins that changed their id (Skylark, now `magpie-calendar`; Magpie, now `magpie-mail`) and renames their
   hidden entries to match, so showing one again brings back the renamed plugin. If the write
   is refused, because the files no longer hold an entry the panel lists, nothing changes and a
   notification says so. Another plugin's uninstaller takes its own entry out of the bar and

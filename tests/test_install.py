@@ -195,6 +195,22 @@ class Install(unittest.TestCase):
         self.assertEqual(shell.read_text(), before)
         self.assertIn("now carries the new one", result.stdout)
 
+    def test_a_magpie_widget_hidden_under_the_old_name_takes_the_new_one(self):
+        """magpie Q-017: Magpie Mail is magpie-mail. An entry hidden as magpie takes the new id."""
+        shell, sidecar = self.write_bar(
+            [{"id": "magpie"}, {"id": "omarchy.clock"}],
+            {"left": [], "center": [],
+             "right": [{"index": 0, "entry": {"id": "crmne.omacal"}},
+                       {"index": 3, "entry": {"id": "magpie", "colour": "blue"}}]})
+        before = shell.read_text()
+        result = self.run_install()
+        self.assertEqual(json.loads(sidecar.read_text())["right"],
+                         [{"index": 0, "entry": {"id": "crmne.omacal"}},
+                          {"index": 3, "entry": {"id": "magpie-mail", "colour": "blue"}}],
+                         result.stdout + result.stderr)
+        self.assertEqual(shell.read_text(), before)
+        self.assertIn("now carries the new one", result.stdout)
+
     def test_an_old_name_already_hidden_under_its_new_one_is_a_twin(self):
         """The twin is found across lanes, whichever of the two comes first."""
         _, sidecar = self.write_bar(
