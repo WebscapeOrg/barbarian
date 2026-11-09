@@ -44,12 +44,18 @@ path = os.path.expanduser("~/.config/omarchy/shell.json")
 side = os.path.expanduser("~/.config/omarchy/bar-hidden.json")
 if not sys.argv[1:]:
     sys.exit("bar-arrange-apply: no ids given")
+repair_hidden = sys.argv[1:] in (["--repair-hidden"], ["--repair-hidden", "--check"])
+repair_check = sys.argv[1:] == ["--repair-hidden", "--check"]
+if "--repair-hidden" in sys.argv[1:] and not repair_hidden:
+    sys.exit("bar-arrange-apply: --repair-hidden can only be combined with --check")
 
 want = []  # (lane, id, hidden)
 ws_id = ws_place = None
 del_spacers = 0
 del_ids = set()
 for arg in sys.argv[1:]:
+    if arg in ("--repair-hidden", "--check"):
+        continue
     if arg.startswith("DEL:"):
         wid = arg[4:]
         if wid == "omarchy.spacer":
@@ -74,6 +80,8 @@ for arg in sys.argv[1:]:
         hid = len(parts) > 1 and parts[1] == "hidden"
     want.append((lane, wid, hid))
 
+if repair_hidden and not os.path.exists(path):
+    sys.exit(0)
 with open(path) as f:
     data = json.load(f)
 layout = data["bar"]["layout"]
@@ -126,16 +134,44 @@ def plugin_kinds_by_id():
             found[wid] = manifest["kinds"]
     return found
 
-# Omarchy unloads a third-party service, panel or overlay when its last shell.json entry
-# leaves the bar. Keep its id in plugins[] while its bar icon is parked.
-hidden_kinds = plugin_kinds_by_id() if any(hid for _, _, hid in want) else {}
-
 parked_in = {ln: [] for ln in LANES}
 if os.path.exists(side):
     with open(side) as f:
         sd = json.load(f)
+    if repair_hidden:
+        if not isinstance(sd, dict):
+            sys.exit(0)
+        rows = [sd.get(KEYS[ln], []) for ln in LANES]
+        if any(not isinstance(lane, list) or any(not isinstance(row, dict)
+               or not isinstance(row.get("entry"), dict) for row in lane) for lane in rows):
+            sys.exit(0)
     for ln in LANES:
         parked_in[ln] = sd.get(KEYS[ln], [])
+
+# Omarchy unloads a third-party service, panel or overlay when its last shell.json entry
+# leaves the bar. Keep its id in plugins[] while its bar icon is parked. Repair mode brings
+# already-hidden apps back too, and exits before any write when every entry is already right.
+hidden_kinds = plugin_kinds_by_id() if repair_hidden or any(hid for _, _, hid in want) else {}
+if repair_hidden:
+    plugins = data.get("plugins", [])
+    if not isinstance(plugins, list):
+        sys.exit("bar-arrange-apply: 'plugins' is not a list")
+    enabled = {item.get("id") for item in plugins if isinstance(item, dict)}
+    visible = {entry.get("id") for ln in LANES for entry in sections[ln]}
+    seen = set()
+    want = []
+    for ln in LANES:
+        for row in parked_in[ln]:
+            wid = (row.get("entry") or {}).get("id")
+            if wid in seen or wid in enabled or wid in visible:
+                continue
+            seen.add(wid)
+            if any(kind in hidden_kinds.get(wid, []) for kind in ("service", "panel", "overlay")):
+                want.append((ln, wid, True))
+    if not want:
+        sys.exit(0)
+    if repair_check:
+        sys.exit(10)
 
 # The workspaces strip moves whole, driven only by the WS directive — pull it out of
 # every lane and the sidecar before anything else looks at the rows.
@@ -257,5 +293,6 @@ def write(p, obj):
         raise
 
 write(path, data)
-write(side, {KEYS[ln]: parked[ln] for ln in LANES})
+if not repair_hidden:
+    write(side, {KEYS[ln]: parked[ln] for ln in LANES})
 PY

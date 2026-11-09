@@ -169,6 +169,13 @@ class Install(unittest.TestCase):
                          [{"index": 0, "entry": {"id": "atlas.arrange"}}])
         self.assertIn("went to the trash", result.stdout)
 
+    def install_manifest(self, wid, kinds):
+        plugin = self.home / ".config/omarchy/plugins" / wid
+        plugin.mkdir(parents=True, exist_ok=True)
+        manifest = {"schemaVersion": 1, "id": wid, "name": wid, "version": "1.0.0",
+                    "kinds": kinds, "entryPoints": {}}
+        (plugin / "manifest.json").write_text(json.dumps(manifest) + "\n")
+
     def write_bar(self, right, hidden):
         shell = self.home / ".config/omarchy/shell.json"
         shell.parent.mkdir(parents=True, exist_ok=True)
@@ -233,6 +240,33 @@ class Install(unittest.TestCase):
                          {"left": [{"index": 0, "entry": {"id": "magpie-calendar"}}],
                           "center": [], "right": []})
 
+    def test_an_existing_hidden_service_is_enabled_during_install(self):
+        shell, sidecar = self.write_bar(
+            [{"id": "omarchy.clock"}],
+            {"left": [], "center": [],
+             "right": [{"index": 0, "entry": {"id": "nixfred.blip", "setting": "kept"}}]})
+        self.install_manifest("nixfred.blip", ["bar-widget", "service"])
+        result = self.run_install()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        config = json.loads(shell.read_text())
+        self.assertEqual(config["plugins"], [{"id": "nixfred.blip"}])
+        self.assertEqual(json.loads(sidecar.read_text())["right"][0]["entry"]["setting"], "kept")
+
+    def test_enabling_an_existing_hidden_service_waits_for_a_free_screen(self):
+        self.run_install()
+        self.calls.write_text("")
+        shell, _ = self.write_bar(
+            [{"id": "omarchy.clock"}],
+            {"left": [], "center": [],
+             "right": [{"index": 0, "entry": {"id": "nixfred.blip"}}]})
+        self.install_manifest("nixfred.blip", ["bar-widget", "service"])
+        before = shell.read_text()
+        self.shell_alive.touch()
+        self.locked(True)
+        result = self.run_install()
+        self.assertEqual(shell.read_text(), before)
+        self.assertTrue(self.called("systemd-run"), result.stdout + result.stderr)
+
     def test_the_rename_lands_while_the_screen_is_locked(self):
         """Only the panel reads the sidecar, so the lock is no reason to wait."""
         _, sidecar = self.write_bar([], {"right": [{"index": 0, "entry": {"id": "skylark"}}]})
@@ -259,6 +293,14 @@ class Install(unittest.TestCase):
         before = sidecar.read_text()
         self.run_install()
         self.assertEqual(sidecar.read_text(), before)
+
+    def test_a_sidecar_with_a_malformed_lane_is_left_alone(self):
+        _, sidecar = self.write_bar([], {"left": [], "center": [], "right": None})
+        before = sidecar.read_text()
+        result = self.run_install()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(sidecar.read_text(), before)
+        self.assertNotIn("Traceback", result.stderr)
 
     def test_no_sidecar_is_no_sidecar_afterwards(self):
         result = self.run_install()

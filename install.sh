@@ -302,6 +302,7 @@ done
 
 DEFERRED=0
 WRITE_FAILED=""
+REPAIR_FAILED=0
 PLUGIN_CHANGED=0
 ENGINE_CHANGED=0
 install_plugin_file() { # <mode> <repo file> <live file>
@@ -633,6 +634,25 @@ if [ "$?" = 3 ]; then
   echo "barbarian: a hidden widget's renamed id waits for the panel to close"
 fi
 
+# An already-hidden service, panel or overlay may have no plugins[] entry left (Magpie Mail and
+# Blip both switched off this way). Check first, so an install with nothing to repair never arms
+# a waiter. The writer repairs missing ids only when the screen and panel are free; otherwise the
+# waiter runs this same committed installer when they clear. A repair writes nothing when the
+# needed entries are already right.
+"$HERE/plugin/bin/bar-arrange-apply" --repair-hidden --check
+repair_needed=$?
+if [ "$repair_needed" = 10 ]; then
+  if busy; then
+    arm_waiter held
+  elif ! "$HERE/plugin/bin/bar-arrange-apply" --repair-hidden; then
+    REPAIR_FAILED=1
+    arm_waiter failed
+  fi
+elif [ "$repair_needed" != 0 ]; then
+  REPAIR_FAILED=1
+  arm_waiter failed
+fi
+
 # A restart is owed when this run wrote a plugin file, or when an earlier one did and the screen
 # went up before it could be compiled.
 RESTART_OWED=0
@@ -713,5 +733,9 @@ if [ -n "$WRITE_FAILED" ]; then
 fi
 if [ "$SWITCHES_FAILED" = 1 ]; then
   echo "barbarian: Caboodle switches could not be installed; the native Features tab is available. Fix the reported path and run the installer again." >&2
+  exit 1
+fi
+if [ "$REPAIR_FAILED" = 1 ]; then
+  echo "barbarian: hidden services could not be kept enabled; the bar configuration was left as reported. Fix it and run the installer again." >&2
   exit 1
 fi

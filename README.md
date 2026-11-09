@@ -172,7 +172,9 @@ one. The `reptile-feature status|on|off <name>` adapter supplies Caboodle's swit
   hidden widget ids in `~/.config/omarchy/bar-hidden.json`. Hiding a plugin whose manifest also
   declares a service, panel or overlay keeps its id in `shell.json`'s top-level `plugins[]`,
   so the app stays enabled without a second copy of its settings; an existing entry is preserved
-  without a duplicate, and uninstalling removes the id again.
+  without a duplicate, and uninstalling removes the id again. The installer also repairs
+  already-hidden entries when the screen and panel are free, so an update restores apps that
+  were switched off before this fix.
   The installer keeps a short list of
   plugins that changed their id (Skylark, now `magpie-calendar`; Magpie, now `magpie-mail`) and renames their
   hidden entries to match, so showing one again brings back the renamed plugin. If the write

@@ -173,6 +173,31 @@ class Apply(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.config()["plugins"], [{"id": entry["id"]}])
 
+    def test_repair_hidden_adds_only_missing_service_ids_and_is_quiet_when_done(self):
+        existing = {"id": "test.existing", "setting": "top-level"}
+        layout = copy.deepcopy(STOCK)
+        layout["plugins"] = [existing]
+        hidden = {"left": [], "center": [], "right": [
+            {"index": 0, "entry": {"id": "test.widget"}},
+            {"index": 4, "entry": {"id": "test.service", "setting": "kept"}},
+            {"index": 7, "entry": {"id": "test.existing", "setting": "sidecar"}},
+        ]}
+        self.write(layout, hidden=hidden)
+        for wid, kinds in (("test.service", ["bar-widget", "service"]),
+                           ("test.widget", ["bar-widget"]),
+                           ("test.existing", ["bar-widget", "panel"])):
+            self.install_manifest(wid, kinds)
+        hidden_before = self.hidden.read_text()
+        result = self.run_apply("--repair-hidden")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.config()["plugins"], [existing, {"id": "test.service"}])
+        self.assertEqual(self.hidden.read_text(), hidden_before)
+        shell_before = self.shell.read_text()
+        result = self.run_apply("--repair-hidden")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.shell.read_text(), shell_before)
+        self.assertEqual(self.hidden.read_text(), hidden_before)
+
     def test_deleting_a_hidden_service_removes_its_plugin_entry_too(self):
         entry = {"id": "test.service", "setting": "kept"}
         self.show_entry(entry)
