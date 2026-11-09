@@ -18,6 +18,7 @@ import unittest
 from pathlib import Path
 
 SCRIPT = Path(__file__).resolve().parent.parent / "plugin/bin/plugin-uninstall"
+APPLY = Path(__file__).resolve().parent.parent / "plugin/bin/bar-arrange-apply"
 
 STUB = """#!/usr/bin/env bash
 echo "$(basename "$0") $*" >> "$CALLS"
@@ -110,6 +111,21 @@ class Uninstall(unittest.TestCase):
         (self.home / ".config/omarchy/shell.json").write_text(
             '{"bar": {"layout": {"left": [], "center": [], '
             '"right": [{"id": "other.plug"}]}}}\n')
+        result = self.run_script("some.plug", BARBARIAN_UNINSTALL_WAIT="0")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse((self.plugins / "some.plug").exists())
+
+    def test_a_hidden_plugins_entry_is_removed_before_the_folder_goes(self):
+        omarchy = self.home / ".config/omarchy"
+        (omarchy / "shell.json").write_text(
+            '{"bar": {"layout": {"left": [], "center": [], '
+            '"right": [{"id": "other.plug"}]}}, "plugins": [{"id": "some.plug"}]}\n')
+        (omarchy / "bar-hidden.json").write_text(
+            '{"left": [], "center": [], '
+            '"right": [{"index": 0, "entry": {"id": "some.plug"}}]}\n')
+        applied = subprocess.run([str(APPLY), "DEL:some.plug"], capture_output=True, text=True,
+                                 env=self.env())
+        self.assertEqual(applied.returncode, 0, applied.stdout + applied.stderr)
         result = self.run_script("some.plug", BARBARIAN_UNINSTALL_WAIT="0")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertFalse((self.plugins / "some.plug").exists())

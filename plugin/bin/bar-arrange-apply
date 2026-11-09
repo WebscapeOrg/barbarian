@@ -5,12 +5,14 @@
 # the workspaces strip per the WS directive. Two lanes since 2026-09-01 (Dave asked for
 # icons on the far left); hiding since the same day (Dave: Bluetooth is "noise/clutter
 # 99% of the time but occasionally I want" — a hidden entry is MOVED to the sidecar with
-# its whole settings object, its lane and its position, never deleted); the CENTER lane
-# and the WS directive since the same evening (Barbarian's mode toggle: the strip goes
+# its whole settings object, its lane and its position, never deleted). A hidden service,
+# panel or overlay also keeps its id in top-level plugins[], so hiding its icon does not
+# unload the app; the CENTER lane and the WS directive since the same evening
+# (Barbarian's mode toggle: the strip goes
 # far left, centre, or far right — "off" was briefly a mode and turned out to be a typo).
 #
-# DEL:<widget-id> (since 2026-09-28) removes an entry outright, wherever it sits — a lane
-# or the sidecar — and is how a plugin's uninstall leaves the bar (bin/plugin-uninstall
+# DEL:<widget-id> (since 2026-09-28) removes an entry outright, wherever it sits — a lane,
+# the sidecar or plugins[] — and is how a plugin's uninstall leaves the bar (bin/plugin-uninstall
 # trashes the folder itself, detached; this script stays the only writer of these files).
 # DEL:omarchy.spacer keeps the older count-based meaning: spacers are fungible, so the
 # panel sends one directive per removed spacer.
@@ -79,6 +81,55 @@ LANES = ("L", "C", "R")
 KEYS = {"L": "left", "C": "center", "R": "right"}
 sections = {ln: layout.get(KEYS[ln], []) for ln in LANES}
 
+def manifest_id(manifest):
+    if not isinstance(manifest, dict) or manifest.get("schemaVersion") != 1 \
+            or isinstance(manifest.get("schemaVersion"), bool):
+        return None
+    if any(key not in manifest for key in ("id", "name", "version", "kinds", "entryPoints")):
+        return None
+    wid = manifest["id"]
+    kinds = manifest["kinds"]
+    entry_points = manifest["entryPoints"]
+    if isinstance(wid, bool) or not isinstance(wid, (str, int, float)):
+        return None
+    if isinstance(wid, float) and wid.is_integer():
+        wid = int(wid)
+    wid = str(wid)
+    if not wid or "/" in wid or ".." in wid:
+        return None
+    if not isinstance(kinds, list) or not kinds or not isinstance(entry_points, dict):
+        return None
+    if any(not isinstance(value, str) or not value or value.startswith("/") or ".." in value
+           for value in entry_points.values()):
+        return None
+    metadata = manifest.get("barWidget")
+    if isinstance(metadata, dict) and "defaultSection" in metadata \
+            and str(metadata["defaultSection"]) not in ("left", "center", "right"):
+        return None
+    return wid
+
+def plugin_kinds_by_id():
+    root = os.path.expanduser("~/.config/omarchy/plugins")
+    try:
+        names = sorted(name for name in os.listdir(root) if not name.startswith("."))
+    except OSError:
+        return {}
+    found = {}
+    for name in names:
+        try:
+            with open(os.path.join(root, name, "manifest.json")) as f:
+                manifest = json.load(f)
+        except (OSError, ValueError):
+            continue
+        wid = manifest_id(manifest)
+        if wid is not None:
+            found[wid] = manifest["kinds"]
+    return found
+
+# Omarchy unloads a third-party service, panel or overlay when its last shell.json entry
+# leaves the bar. Keep its id in plugins[] while its bar icon is parked.
+hidden_kinds = plugin_kinds_by_id() if any(hid for _, _, hid in want) else {}
+
 parked_in = {ln: [] for ln in LANES}
 if os.path.exists(side):
     with open(side) as f:
@@ -140,6 +191,12 @@ for lane, wid, hid in want:
     else:
         sys.exit(f"bar-arrange-apply: '{wid}' is not in the bar or hidden list (or named twice)")
     if hid:
+        if any(kind in hidden_kinds.get(wid, []) for kind in ("service", "panel", "overlay")):
+            plugins = data.setdefault("plugins", [])
+            if not isinstance(plugins, list):
+                sys.exit("bar-arrange-apply: 'plugins' is not a list")
+            if not any(isinstance(item, dict) and item.get("id") == wid for item in plugins):
+                plugins.append({"id": wid})
         parked[lane].append({"index": pos[lane], "entry": entry})
     else:
         ordered[lane].append(entry)
@@ -155,11 +212,20 @@ for lane, wid, hid in want:
 # every entry the same way; an id that names nothing is a caller's mistake, refused
 # like any other unknown id rather than silently ignored.
 deleted = []
+configured_plugins = data.get("plugins", [])
+if del_ids and not isinstance(configured_plugins, list):
+    sys.exit("bar-arrange-apply: 'plugins' is not a list")
 for wid in del_ids:
     pool = pools.pop(wid, None)
-    if not pool:
-        sys.exit(f"bar-arrange-apply: '{wid}' is not in the bar or hidden list")
-    deleted.extend(pool)
+    has_plugin_entry = any(isinstance(item, dict) and item.get("id") == wid
+                           for item in configured_plugins)
+    if not pool and not has_plugin_entry:
+        sys.exit(f"bar-arrange-apply: '{wid}' is not in the bar, hidden list or plugins[]")
+    deleted.extend(pool or [])
+    configured_plugins = [item for item in configured_plugins
+                          if not isinstance(item, dict) or item.get("id") != wid]
+if del_ids and "plugins" in data:
+    data["plugins"] = configured_plugins
 sp_pool = pools.get("omarchy.spacer") or []
 for _ in range(del_spacers):
     if sp_pool:

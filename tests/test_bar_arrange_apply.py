@@ -6,6 +6,7 @@
 Each test runs the real script with HOME pointing at a throwaway folder, so nothing touches the
 running bar.
 """
+import copy
 import json
 import os
 import subprocess
@@ -50,6 +51,23 @@ class Apply(unittest.TestCase):
     def parked(self):
         return json.loads(self.hidden.read_text())
 
+    def config(self):
+        return json.loads(self.shell.read_text())
+
+    def install_manifest(self, wid, kinds):
+        plugin = self.home / ".config/omarchy/plugins" / wid
+        plugin.mkdir(parents=True)
+        manifest = {"schemaVersion": 1, "id": wid, "name": wid, "version": "1.0.0",
+                    "kinds": kinds, "entryPoints": {}}
+        (plugin / "manifest.json").write_text(json.dumps(manifest) + "\n")
+
+    def show_entry(self, entry, plugins=None):
+        layout = copy.deepcopy(STOCK)
+        layout["bar"]["layout"]["right"].insert(0, entry)
+        if plugins is not None:
+            layout["plugins"] = plugins
+        self.write(layout)
+
     def test_a_strip_that_is_not_changing_lane_stays_where_it_stands(self):
         """A stock bar's menu button must not be pushed out of the corner by a desk change."""
         self.run_apply("R:omarchy.power", "R:omarchy.clock", "WS:omarchy.workspaces:left")
@@ -73,6 +91,97 @@ class Apply(unittest.TestCase):
         self.assertEqual(parked[0]["entry"]["format"], "ddd d MMM HH:mm")
         self.run_apply("R:omarchy.clock", "R:omarchy.power", "WS:omarchy.workspaces:left")
         self.assertEqual(self.ids("right")[:2], ["omarchy.clock", "omarchy.power"])
+        self.assertEqual(self.parked()["right"], [])
+
+    def test_hiding_a_service_panel_or_overlay_keeps_the_plugin_enabled(self):
+        for kind in ("service", "panel", "overlay"):
+            with self.subTest(kind=kind):
+                wid = f"test.{kind}"
+                entry = {"id": wid, "refreshIntervalSec": 120, "nested": {"keep": True}}
+                self.show_entry(entry)
+                self.install_manifest(wid, ["bar-widget", kind])
+                result = self.run_apply(f"R:{wid}:hidden")
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(self.config()["plugins"], [{"id": wid}])
+                self.assertEqual(self.parked()["right"][0]["entry"], entry)
+
+    def test_hiding_a_bar_only_widget_adds_no_plugin_entry(self):
+        entry = {"id": "test.widget", "setting": "kept"}
+        self.show_entry(entry)
+        self.install_manifest(entry["id"], ["bar-widget"])
+        result = self.run_apply("R:test.widget:hidden")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("plugins", self.config())
+
+    def test_a_non_string_kind_member_does_not_hide_a_service_kind(self):
+        entry = {"id": "test.service"}
+        self.show_entry(entry)
+        self.install_manifest(entry["id"], ["bar-widget", "service", None])
+        result = self.run_apply("R:test.service:hidden")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.config()["plugins"], [{"id": "test.service"}])
+
+    def test_a_manifest_omarchy_rejects_adds_no_plugin_entry(self):
+        entry = {"id": "test.service"}
+        self.show_entry(entry)
+        self.install_manifest(entry["id"], ["bar-widget", "service"])
+        manifest = self.home / ".config/omarchy/plugins/test.service/manifest.json"
+        manifest.write_text(json.dumps({"id": "test.service", "kinds": ["service"]}) + "\n")
+        result = self.run_apply("R:test.service:hidden")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("plugins", self.config())
+
+    def test_a_numeric_manifest_id_matches_its_string_bar_entry(self):
+        entry = {"id": "123"}
+        self.show_entry(entry)
+        self.install_manifest("123", ["bar-widget", "service"])
+        manifest_path = self.home / ".config/omarchy/plugins/123/manifest.json"
+        manifest = json.loads(manifest_path.read_text())
+        manifest["id"] = 123
+        manifest_path.write_text(json.dumps(manifest) + "\n")
+        result = self.run_apply("R:123:hidden")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.config()["plugins"], [{"id": "123"}])
+
+    def test_a_boolean_schema_version_is_rejected(self):
+        entry = {"id": "test.service"}
+        self.show_entry(entry)
+        self.install_manifest(entry["id"], ["bar-widget", "service"])
+        manifest_path = self.home / ".config/omarchy/plugins/test.service/manifest.json"
+        manifest = json.loads(manifest_path.read_text())
+        manifest["schemaVersion"] = True
+        manifest_path.write_text(json.dumps(manifest) + "\n")
+        result = self.run_apply("R:test.service:hidden")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("plugins", self.config())
+
+    def test_an_existing_plugin_entry_is_preserved_without_a_duplicate(self):
+        entry = {"id": "test.service", "setting": "bar copy"}
+        existing = {"id": "test.service", "setting": "plugin copy"}
+        self.show_entry(entry, plugins=[existing, {"id": "test.other"}])
+        self.install_manifest(entry["id"], ["bar-widget", "service"])
+        result = self.run_apply("R:test.service:hidden")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.config()["plugins"], [existing, {"id": "test.other"}])
+
+    def test_reapplying_an_existing_hide_repairs_its_missing_plugin_entry(self):
+        entry = {"id": "test.service", "setting": "kept"}
+        self.write(STOCK, hidden={"left": [], "center": [],
+                                  "right": [{"index": 0, "entry": entry}]})
+        self.install_manifest(entry["id"], ["bar-widget", "service"])
+        result = self.run_apply("R:test.service:hidden")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.config()["plugins"], [{"id": entry["id"]}])
+
+    def test_deleting_a_hidden_service_removes_its_plugin_entry_too(self):
+        entry = {"id": "test.service", "setting": "kept"}
+        self.show_entry(entry)
+        self.install_manifest(entry["id"], ["bar-widget", "service"])
+        self.run_apply("R:test.service:hidden")
+        self.assertEqual(self.config()["plugins"], [{"id": "test.service"}])
+        result = self.run_apply("DEL:test.service")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.config()["plugins"], [])
         self.assertEqual(self.parked()["right"], [])
 
     def test_an_id_it_does_not_recognise_changes_nothing(self):
