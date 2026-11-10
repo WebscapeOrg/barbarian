@@ -136,6 +136,9 @@ Chrome's Mail and Calendar launchers read the account for each Chrome profile fr
 machine-local `~/.config/omarchy/workspace-layout/google-accounts.json`. The JSON maps profile
 names (`Default`, `Profile 1`) to their Google account addresses. A missing file or profile entry
 leaves that window without a launcher rather than opening the wrong account.
+Other private web apps can be described in `local-launchers.json` beside it: each entry maps a
+window class to its `launch` command and panel `label`. Those machine-local entries join the add
+picker without putting private addresses in git.
 
 Open **HYPER+L → Features**, or use the **Reptile** switches in Caboodle, to turn behaviors
 on and off independently. Both controls share the same settings. Changes are saved immediately;

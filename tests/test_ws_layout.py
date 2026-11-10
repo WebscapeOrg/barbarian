@@ -433,6 +433,29 @@ class AccountLaunchers(unittest.TestCase):
         self.assertIsNone(engine.launcher_or_recorded(win, 3))
 
 
+class LocalLaunchers(unittest.TestCase):
+    def test_machine_local_launcher_label_and_picker_entry(self):
+        klass = "chrome-private.example.test__-Default"
+        entries = {klass: {"launch": "omarchy-launch-webapp 'https://private.example.test'",
+                           "label": "Private App"}}
+        with mock.patch.object(engine, "LOCAL_LAUNCHERS", entries):
+            self.assertEqual(engine.launcher_for(klass, 3), entries[klass]["launch"])
+            self.assertEqual(engine.label_for(klass), "Private App")
+            self.assertIn(klass, engine.app_order())
+
+    def test_a_machine_local_entry_without_a_command_reopens_nothing(self):
+        klass = "chrome-private.example.test__-Default"
+        with mock.patch.object(engine, "LOCAL_LAUNCHERS", {klass: {"label": "Private App"}}):
+            self.assertIsNone(engine.launcher_for(klass, 3))
+
+    def test_a_non_object_machine_local_file_is_ignored(self):
+        with tempfile.TemporaryDirectory(prefix="barbarian-local-launchers-") as temporary:
+            path = pathlib.Path(temporary) / "local.json"
+            path.write_text("[]\n")
+            with mock.patch.object(engine, "LOCAL_LAUNCHERS_FILE", str(path)):
+                self.assertEqual(engine.read_local_launchers(), {})
+
+
 class LinkWindows(unittest.TestCase):
     """A link Magpie opened is a guest: never recorded, never closed, never taken for a recorded
     window or for the window a restore waits for. Magpie opens every link through its own page,
