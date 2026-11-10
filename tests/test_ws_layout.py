@@ -384,6 +384,45 @@ class SkylarkRestoration(unittest.TestCase):
             self.assertEqual(engine.floating_on(4), [])
 
 
+class AccountLaunchers(unittest.TestCase):
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory(prefix="barbarian-accounts-")
+        self.addCleanup(directory.cleanup)
+        self.settings = pathlib.Path(directory.name) / "accounts.json"
+        self.settings.write_text(json.dumps({
+            "Default": "personal@example.test",
+            "Profile 1": "work@example.test",
+        }))
+        patcher = mock.patch.object(engine, "ACCOUNT_SETTINGS", str(self.settings))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_personal_mail_and_calendar_use_the_private_default_account(self):
+        for klass, kind in (("chrome-mail.google.com__mail_-Default", "mail"),
+                            ("chrome-calendar.google.com__calendar_r_week-Default", "calendar")):
+            with self.subTest(kind=kind):
+                command = engine.launcher_for(klass, 3)
+                self.assertIn(f"https://{kind}.google.com/", command)
+                self.assertIn("authuser=personal@example.test", command)
+                self.assertIn("--profile-directory=Default", command)
+
+    def test_work_mail_and_calendar_use_the_private_profile_account(self):
+        for klass in ("chrome-mail.google.com__mail_-Profile_1",
+                      "chrome-calendar.google.com__calendar_r_week-Profile_1"):
+            with self.subTest(klass=klass):
+                command = engine.launcher_for(klass, 2)
+                self.assertIn("authuser=work@example.test", command)
+                self.assertIn("--profile-directory='Profile 1'", command)
+
+    def test_a_missing_account_file_reopens_nothing(self):
+        self.settings.unlink()
+        self.assertIsNone(engine.launcher_for("chrome-mail.google.com__mail_-Default", 3))
+
+    def test_a_missing_profile_entry_reopens_nothing(self):
+        self.settings.write_text("{}\n")
+        self.assertIsNone(engine.launcher_for("chrome-calendar.google.com__calendar_r_week-Default", 3))
+
+
 class LinkWindows(unittest.TestCase):
     """A link Magpie opened is a guest: never recorded, never closed, never taken for a recorded
     window or for the window a restore waits for. Magpie opens every link through its own page,
@@ -465,7 +504,10 @@ class LinkWindows(unittest.TestCase):
         dispatched, out = [], io.StringIO()
         with tempfile.TemporaryDirectory(prefix="barbarian-link-restore-") as temporary:
             (pathlib.Path(temporary) / "ws4.json").write_text(json.dumps(record))
+            accounts = pathlib.Path(temporary) / "accounts.json"
+            accounts.write_text(json.dumps({"Profile 1": "work@example.test"}))
             with mock.patch.object(engine, "SNAP_DIR", temporary), \
+                 mock.patch.object(engine, "ACCOUNT_SETTINGS", str(accounts)), \
                  mock.patch.object(engine, "on_ws", return_value=[link]), \
                  mock.patch.object(engine, "clients", return_value=[link]), \
                  mock.patch.object(engine, "stand_on"), \

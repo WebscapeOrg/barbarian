@@ -132,6 +132,11 @@ closing extra windows never closes them, and a restore never takes one for a win
 reopening. Magpie Mail opens every link through its own `link-window.html` page, so each link
 window's class contains `_link-window.html-`, and that is how Barbarian knows one.
 
+Chrome's Mail and Calendar launchers read the account for each Chrome profile from the
+machine-local `~/.config/omarchy/workspace-layout/google-accounts.json`. The JSON maps profile
+names (`Default`, `Profile 1`) to their Google account addresses. A missing file or profile entry
+leaves that window without a launcher rather than opening the wrong account.
+
 Open **HYPER+L → Features**, or use the **Reptile** switches in Caboodle, to turn behaviors
 on and off independently. Both controls share the same settings. Changes are saved immediately;
 no shell restart is needed. Saved recordings and quick-app choices are retained.
