@@ -28,8 +28,9 @@ A report, a review, a demo recording or a set of screenshots is something Dave s
 read in a chat window. Before you start work in a repository, read
 `~/.local/share/peacock/agent-instructions.md` and follow it: it says how to publish one with
 `peacock publish`, where it lands (`docs/published/`, never committed), and how Dave and other
-agents see it. Do not copy its contents into this file or any other file: it is kept in one place
-so that a change to it reaches every agent.
+agents see it. Do not copy its contents into this file or any other
+file: it is kept in one place so that a change to it reaches every agent.
 
 ```
 
+This repository is public, so the shared Folklore block and agents' working notes stay out of it. Do not run `folklore compile` here or commit its block; agents read those rules from their global instruction files. Task lists, question lists, work notes and verifier notes under `docs/` are local-only and ignored by git.

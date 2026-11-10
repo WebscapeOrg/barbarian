@@ -1,3 +1,17 @@
 __pycache__/
 docs/published/
 /docs/artifacts/reptile-features/
+/docs/agent-closed-tasks.md
+/docs/agent-open-tasks.md
+/docs/user-closed-tasks.md
+/docs/user-open-tasks.md
+/docs/carrot-files/
+/docs/pickle-files/
+/docs/open-questions.md
+/docs/settled-questions.md
+/docs/per-app-super-w-verifier.md
+/docs/per-app-super-w-work.md
+/docs/reptile-features-verifier.md
+/docs/reptile-features-work.md
+/docs/skylark-restore-verifier.md
+/docs/skylark-restore-work.md
