@@ -422,6 +422,16 @@ class AccountLaunchers(unittest.TestCase):
         self.settings.write_text("{}\n")
         self.assertIsNone(engine.launcher_for("chrome-calendar.google.com__calendar_r_week-Default", 3))
 
+    def test_a_non_object_account_file_reopens_nothing(self):
+        self.settings.write_text("[]\n")
+        self.assertIsNone(engine.launcher_for("chrome-mail.google.com__mail_-Default", 3))
+
+    def test_missing_settings_never_reuse_a_recorded_account_command(self):
+        self.settings.unlink()
+        win = {"class": "chrome-mail.google.com__mail_-Default",
+               "launch": "omarchy-launch-webapp 'https://mail.google.com/mail/?authuser=old@example.test'"}
+        self.assertIsNone(engine.launcher_or_recorded(win, 3))
+
 
 class LinkWindows(unittest.TestCase):
     """A link Magpie opened is a guest: never recorded, never closed, never taken for a recorded
