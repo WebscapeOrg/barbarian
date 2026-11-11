@@ -1374,7 +1374,7 @@ Panel {
       model: qa.model.apps || []
 
       delegate: Rectangle {
-        property alias closeControl: closeToggle
+        readonly property Item closeControl: closeToggle
         width: qa.width
         height: rowBody.implicitHeight + Style.space(20)
         radius: Style.space(8)

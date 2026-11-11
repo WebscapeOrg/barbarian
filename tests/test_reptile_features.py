@@ -33,6 +33,14 @@ layout = load("layout_features_test", "ws-layout")
 quick = load("quick_features_test", "quick-app")
 
 
+class QtCompatibility(unittest.TestCase):
+    def test_quick_app_delegate_exposes_its_close_control_as_a_property(self):
+        """Qt 6.11.2 with Quickshell 0.3.1 rejected this alias; the property form loads there."""
+        source = (Path(__file__).resolve().parent.parent / "plugin/Reptile.qml").read_text()
+        self.assertNotIn("property alias closeControl:", source)
+        self.assertIn("readonly property Item closeControl: closeToggle", source)
+
+
 class FeatureTest(unittest.TestCase):
     def setUp(self):
         self.scratch = tempfile.TemporaryDirectory(prefix="barbarian-features-")
