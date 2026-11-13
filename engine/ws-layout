@@ -251,12 +251,16 @@ def launcher_for(klass, ws):
 
 
 def launcher_for_win(win, ws):
-    """How to open a whole window record (class AND title), or None. Quickshell plugin windows
-    are summoned by title prefix — the shared class says only "the shell" — and everything else
-    goes by class as before."""
-    if win.get("class") == PLACEHOLDER_CLASS:
+    """How to open a whole window record (class AND title), or None. The shell's plugins are
+    summoned by title prefix — the shared class says only "the shell" — and a standalone app's
+    own window goes through its SUMMONS command too, falling back to its class like any
+    ordinary app when the title names no summons."""
+    klass = win.get("class")
+    if klass == PLACEHOLDER_CLASS:
         return SUMMONS.get(summons_title(win))
-    return launcher_for(win.get("class"), ws)
+    if klass in STANDALONE_SUMMONS_CLASSES:
+        return SUMMONS.get(summons_title(win)) or launcher_for(klass, ws)
+    return launcher_for(klass, ws)
 
 
 def launcher_or_recorded(win, ws):
@@ -341,33 +345,62 @@ PLACEHOLDER_TITLE = re.compile(r"^Barbarian · missing (\S+) · ([0-9a-f]{6})(?:
 # 2026-11-08 (Dave's magpie C-065 and Q-017, hobnob #9345 and #9376): its title changed ("🐦 Magpie"
 # to "✉️ Magpie Mail") and its plugin id changed (magpie to magpie-mail), so the summon tries
 # magpie-mail and falls back to magpie while the shell still answers unknown.
+#
+# ⚠️ A SUMMONS APP MAY LEAVE THE SHELL. Magpie Calendar became a standalone desktop app on
+# 2026-11-13 (Dave's C-029 in magpie-calendar): its window is a normal Qt window of its own
+# class, magpie-calendar, with the same title — no longer the shell's shared class. A
+# standalone class carries only its own app's titles (never another plugin's); unlike the
+# shell's class it names one real app, so a window of it with a stranger's title opens by class
+# as any ordinary app does, when a launcher for that class is known. Recordings from either era
+# reopen through the same SUMMONS command, which asks the app's opener first (it summons the
+# plugin while the plugin still exists and opens the app after the move) and then the plugin
+# ids, the shell answering `unknown` with exit 0 for one it lacks, so the output is checked —
+# never the exit code — for the fallback to reach the next id.
+STANDALONE_SUMMONS_CLASSES = {"magpie-calendar": "Magpie Calendar"}
 SUMMONS = {
     "✉️ Magpie Mail": (
         "sh -c '[ \"$(omarchy-shell shell summon magpie-mail '\\''{}'\\'')\" = ok ]"
         " || omarchy-shell shell summon magpie '\\''{}'\\'''"
     ),
-    "Magpie Calendar": ("sh -c '[ \"$(omarchy-shell shell summon magpie-calendar)\" = ok ]"
-                        " || omarchy-shell shell summon skylark'"),
+    "Magpie Calendar": ("sh -c 'python3 \"${XDG_DATA_HOME:-$HOME/.local/share}/magpie-calendar/open-magpie-calendar.py\""
+                        " || { [ \"$(omarchy-shell shell summon magpie-calendar)\" = ok ]"
+                        " || omarchy-shell shell summon skylark; }'"),
 }
 SUMMONS_ALIASES = {"Skylark": "Magpie Calendar", "🐦 Magpie": "✉️ Magpie Mail"}
 
 
 def summons_title(win):
     """The SUMMONS plugin a window belongs to, under its current name, or None for every other
-    window — including a Quickshell window whose title names no known plugin. The class alone is
-    the whole shell's and is never an identity: a Magpie may fill a Magpie recording whose title
-    has changed, and nothing else (the probe's four forbidden assignments, 2026-10-15)."""
-    if win.get("class") != PLACEHOLDER_CLASS:
-        return None
+    window — including the shell's windows whose title names no known plugin, and a standalone
+    app's window under a stranger's or another plugin's title. The class is never an identity:
+    the shell's names only the shell, and a standalone app's names only its own app, so a
+    Magpie may fill a Magpie recording whose title has changed, and nothing else (the probe's
+    four forbidden assignments, 2026-10-15)."""
+    klass = win.get("class")
     title = win.get("title", "")
     for prefix in (*SUMMONS, *SUMMONS_ALIASES):
-        if title.startswith(prefix):
-            return SUMMONS_ALIASES.get(prefix, prefix)
+        if not title.startswith(prefix):
+            continue
+        name = SUMMONS_ALIASES.get(prefix, prefix)
+        if klass == PLACEHOLDER_CLASS or STANDALONE_SUMMONS_CLASSES.get(klass) == name:
+            return name
     return None
 
 
 def app_identity(win):
     return summons_title(win) or win["class"]
+
+
+def window_matches(c, w, exact):
+    """Whether a live window `c` may fill the recorded `w`: exact-title first, fallback loose —
+    and a summons app matches under either era's class (the plugin's window in the shell, or
+    the standalone app's own), while every other app stays strict on its class."""
+    if exact and c["title"][:60] != w.get("title", "")[:60]:
+        return False
+    if c["class"] == w["class"]:
+        return summons_title(c) == summons_title(w)
+    identity = summons_title(c)
+    return identity is not None and identity == summons_title(w)
 
 
 # The panel puts a placeholder up in well under a second; this only stops a panel too old to
@@ -684,15 +717,14 @@ def put_float(c, rec, g):
 def match_floats(floats, live):
     """Each recorded floating window to one on the desk: same class and title first, then class.
     Like assign(): a Quickshell plugin window matches only within its summons identity, never
-    by the shared class alone."""
+    by the shared class alone — and a summons app that left the shell matches across the eras'
+    classes, its window then the standalone app's."""
     pool, found = list(live), {}
     for exact in (True, False):
         for i, rec in enumerate(floats):
             if i in found:
                 continue
-            c = next((c for c in pool if c["class"] == rec["class"]
-                      and (not exact or c["title"][:60] == rec.get("title", "")[:60])
-                      and summons_title(c) == summons_title(rec)), None)
+            c = next((c for c in pool if window_matches(c, rec, exact)), None)
             if c:
                 found[i] = c
                 pool.remove(c)
@@ -889,16 +921,15 @@ def close_extras(ws, need):
 def assign(steps, live):
     """Match each recorded window to one on the desk: same class and title first, then same class.
     A Quickshell plugin window is only ever matched within its summons identity — its class is
-    the whole shell's — while ordinary apps keep the title-change fallback."""
+    the whole shell's — while ordinary apps keep the title-change fallback, and a summons app
+    that left the shell matches across the eras' classes."""
     pool, assigned = list(by_position(live)), {}
     for exact in (True, False):
         for i, s in enumerate(steps):
             if i in assigned:
                 continue
             w = s["win"]
-            c = next((c for c in pool if c["class"] == w["class"]
-                      and (not exact or c["title"][:60] == w.get("title", "")[:60])
-                      and summons_title(c) == summons_title(w)), None)
+            c = next((c for c in pool if window_matches(c, w, exact)), None)
             if c:
                 assigned[i] = c
                 pool.remove(c)
@@ -921,8 +952,11 @@ def same_arrangement(live, steps, assigned):
     if any(c.get("fullscreen") for c in live):
         return True
     now = steps_from_tree(prune(split_tree(by_position(live)), lambda c: c["address"] in mine))
-    return [(s["win"]["class"], s["after"], s["side"]) for s in now] == \
-           [(s["win"]["class"], s["after"], s["side"]) for s in steps]
+    # The identity, not the raw class: a summons app that left the shell keeps its place when
+    # its recording holds the other era's class, or every calendar desk would rebuild at every
+    # restore until Dave re-records it (the assign above already matched the eras).
+    return [(app_identity(s["win"]), s["after"], s["side"]) for s in now] == \
+           [(app_identity(s["win"]), s["after"], s["side"]) for s in steps]
 
 
 def live_steps(live, assigned):
@@ -996,16 +1030,20 @@ def is_tiled(addr, ws):
 
 def open_window(klass, cmd, ws, floating=False):
     """Recover an open shell app or launch a missing window. Returns the client, or None on timeout.
-    A Quickshell summon is matched by title as well as class: the class alone is the whole
-    shell's, so any other Quickshell client appearing in the same moment would do."""
+    A summons app is matched by its summons title under either class — the shell's shared one or
+    the standalone app's own — so a recording from either era finds the live window instead of
+    summoning a second calendar. Without a summons title (a recording opened by its recorded
+    launch command), any window of the recorded class counts, as before."""
     if not features.enabled("open_apps"):
         return None
     title = None
-    if klass == PLACEHOLDER_CLASS:
+    if klass == PLACEHOLDER_CLASS or klass in STANDALONE_SUMMONS_CLASSES:
         title = next((p for p in SUMMONS if cmd == SUMMONS[p]), None)
 
     def is_app(c):
-        return c["class"] == klass and (title is None or summons_title(c) == title)
+        if title is None:
+            return c["class"] == klass
+        return summons_title(c) == title
 
     live = clients()
     if title:

@@ -58,16 +58,34 @@ class Summons(unittest.TestCase):
                 self.assertEqual(engine.app_identity(win), "✉️ Magpie Mail")
 
     def test_magpie_calendar_is_summoned_without_toggling_it_closed(self):
-        """Skylark is Magpie Calendar since 2026-11-03: either title reopens it, through the new
-        plugin id first and the old one when the shell does not know the new one yet."""
+        """Skylark is Magpie Calendar since 2026-11-03, and a standalone app since 2026-11-13
+        (Dave's C-029 in magpie-calendar): every title reopens it through the app's opener
+        first, with the plugin ids as the fallback while any machine still has the plugin."""
         for title in ("Magpie Calendar", "Magpie Calendar — Week", "Skylark", "Skylark — Calendar"):
             with self.subTest(title=title):
                 win = {"class": "org.quickshell", "title": title}
                 command = engine.launcher_for_win(win, 4)
                 self.assertEqual(command, engine.SUMMONS["Magpie Calendar"])
-                self.assertIn("omarchy-shell shell summon magpie-calendar", command)
+                self.assertIn("magpie-calendar/open-magpie-calendar.py", command)
+                self.assertIn('[ "$(omarchy-shell shell summon magpie-calendar)" = ok ]', command)
                 self.assertIn("|| omarchy-shell shell summon skylark", command)
                 self.assertNotIn("toggle", command)
+
+    def test_the_standalone_calendar_window_is_summoned_like_the_plugin_was(self):
+        """The calendar's window is a normal Qt window of class magpie-calendar since the move:
+        both eras' classes carry the same SUMMONS command and the same identity."""
+        for klass in ("org.quickshell", "magpie-calendar"):
+            with self.subTest(klass=klass):
+                win = {"class": klass, "title": "Magpie Calendar — Week"}
+                self.assertEqual(engine.launcher_for_win(win, 4), engine.SUMMONS["Magpie Calendar"])
+                self.assertEqual(engine.app_identity(win), "Magpie Calendar")
+
+    def test_the_standalone_class_alone_is_not_an_identity(self):
+        """A window of the calendar's class with a stranger's title is not the calendar: no
+        other app may be grabbed into a Magpie Calendar recording."""
+        win = {"class": "magpie-calendar", "title": "Something Else Entirely"}
+        self.assertEqual(engine.launcher_for_win(win, 3), engine.launcher_for("magpie-calendar", 3))
+        self.assertEqual(engine.app_identity(win), "magpie-calendar")
 
     def test_every_alias_names_a_current_plugin(self):
         for old, new in engine.SUMMONS_ALIASES.items():
@@ -147,6 +165,30 @@ class WindowIdentity(unittest.TestCase):
                 window = self.win(actual, "0x2")
                 self.assertEqual(engine.assign([{"win": self.win(recorded)}], [window]), {0: window})
                 self.assertEqual(engine.match_floats([self.win(recorded)], [window]), {0: window})
+
+    def test_plugin_era_and_standalone_calendar_recordings_match_either_window(self):
+        """The calendar left the shell on 2026-11-13: a recording made under the shell's class
+        matches the live standalone window, and the reverse, so Dave's recordings survive the
+        move in both directions."""
+        for recorded, actual in [("Magpie Calendar", "Magpie Calendar"),
+                                 ("Magpie Calendar — Week", "Magpie Calendar"),
+                                 ("Skylark", "Magpie Calendar")]:
+            with self.subTest(recorded=recorded, actual=actual):
+                window = self.win(actual, "0x2", "magpie-calendar")
+                self.assertEqual(engine.assign([{"win": self.win(recorded)}], [window]), {0: window})
+                self.assertEqual(engine.match_floats([self.win(recorded)], [window]), {0: window})
+        window = self.win("Magpie Calendar", "0x2")
+        recorded = self.win("Magpie Calendar — Week", "0x1", "magpie-calendar")
+        self.assertEqual(engine.assign([{"win": recorded}], [window]), {0: window})
+        self.assertEqual(engine.match_floats([recorded], [window]), {0: window})
+
+    def test_the_standalone_class_is_not_grabbed_for_another_plugin(self):
+        """The calendar's own class with a Magpie Mail title is a stranger: the standalone class
+        widens only the calendar's identity, never another app's."""
+        recorded = self.win("✉️ Magpie Mail — Inbox")
+        actual = self.win("✉️ Magpie Mail — Inbox", "0x2", "magpie-calendar")
+        self.assertEqual(engine.assign([{"win": recorded}], [actual]), {})
+        self.assertEqual(engine.match_floats([recorded], [actual]), {})
 
     def test_ordinary_app_titles_may_change(self):
         recorded = self.win("Old tab", klass="google-chrome")
@@ -355,6 +397,37 @@ class SkylarkRestoration(unittest.TestCase):
         for title in ("Skylark", "Magpie Calendar"):
             with self.subTest(title=title):
                 self.move_open_calendar({**self.window, "title": title, "workspace": {"id": 5}})
+
+    def test_an_old_recording_finds_the_standalone_window_without_relaunching(self):
+        """The recorded class is the shell's, the live window the app's own: the summons title
+        bridges the eras, so the open calendar is moved, never summoned twice."""
+        self.move_open_calendar({**self.window, "title": "Magpie Calendar",
+                                 "class": "magpie-calendar", "workspace": {"id": 5}})
+
+    def test_an_arranged_standalone_calendar_desk_is_not_rebuilt(self):
+        """The recording holds the plugin-era class and the live window is the standalone app's
+        own: the desk is already as saved — no rebuild, no desk flash — until Dave re-records,
+        because the arrangement is compared by identity, never by the raw class."""
+        live = {**self.window, "class": "magpie-calendar", "title": "Magpie Calendar"}
+        record = {"workspace": 4, "name": "Messaging", "format": 2, "floating": [],
+                  "windows": [{**self.window, "title": "Magpie Calendar",
+                               "launch": engine.SUMMONS["Magpie Calendar"],
+                               "after": None, "side": None, "share": None}]}
+        out = io.StringIO()
+        with tempfile.TemporaryDirectory(prefix="barbarian-cal-era-") as temporary:
+            (pathlib.Path(temporary) / "ws4.json").write_text(json.dumps(record))
+            with mock.patch.object(engine, "SNAP_DIR", temporary), \
+                 mock.patch.object(engine, "on_ws", return_value=[live]), \
+                 mock.patch.object(engine, "clients", return_value=[live]), \
+                 mock.patch.object(engine, "stand_on") as stand, \
+                 mock.patch.object(engine, "dispatch"), \
+                 mock.patch.object(engine.subprocess, "Popen") as launch, \
+                 mock.patch.object(engine, "card"), mock.patch.object(engine, "card_down"), \
+                 mock.patch.object(engine, "ANNOUNCE", False), contextlib.redirect_stdout(out):
+                self.assertEqual(engine.restore(4), 0)
+        stand.assert_not_called()
+        launch.assert_not_called()
+        self.assertIn("already as saved", out.getvalue())
 
     def move_open_calendar(self, window):
 
