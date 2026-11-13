@@ -45,15 +45,16 @@ class Summons(unittest.TestCase):
     by title and summoned through the shell (Magpie, 2026-10-15, Dave's Phase 3)."""
 
     def test_a_magpie_mail_window_is_summoned_by_its_title(self):
-        """Magpie is Magpie Mail since 2026-11-08 (magpie C-065 and Q-017): the new title and the old
-        one both reopen it through the new plugin id first and the old one while the shell does
-        not know the new one yet."""
+        """Magpie is Magpie Mail since 2026-11-08 (magpie C-065 and Q-017), and a native app
+        at the mail C-080 cutover: every title opens it through the app's
+        launcher first, then the plugin ids while any shell still has them."""
         for title in ("✉️ Magpie Mail", "✉️ Magpie Mail — Inbox", "🐦 Magpie", "🐦 Magpie — Inbox"):
             with self.subTest(title=title):
                 win = {"class": "org.quickshell", "title": title}
                 command = engine.launcher_for_win(win, 3)
                 self.assertEqual(command, engine.SUMMONS["✉️ Magpie Mail"])
-                self.assertIn("omarchy-shell shell summon magpie-mail", command)
+                self.assertTrue(command.startswith("sh -c 'magpie-mail"), command)
+                self.assertIn("summon magpie-mail", command)
                 self.assertIn("|| omarchy-shell shell summon magpie", command)
                 self.assertEqual(engine.app_identity(win), "✉️ Magpie Mail")
 
@@ -70,6 +71,17 @@ class Summons(unittest.TestCase):
                 self.assertIn('[ "$(omarchy-shell shell summon magpie-calendar)" = ok ]', command)
                 self.assertIn("|| omarchy-shell shell summon skylark", command)
                 self.assertNotIn("toggle", command)
+
+    def test_the_native_mail_window_is_summoned_like_the_plugin_was(self):
+        """The mail's window is a normal Qt window of class omamail-app at the cutover, titled
+        with or without the envelope emoji: both eras' classes and both titles carry the same
+        SUMMONS command and the same identity."""
+        for klass in ("org.quickshell", "omamail-app"):
+            for title in ("\u2709\ufe0f Magpie Mail — Inbox", "Magpie Mail"):
+                with self.subTest(klass=klass, title=title):
+                    win = {"class": klass, "title": title}
+                    self.assertEqual(engine.launcher_for_win(win, 3), engine.SUMMONS["\u2709\ufe0f Magpie Mail"])
+                    self.assertEqual(engine.app_identity(win), "\u2709\ufe0f Magpie Mail")
 
     def test_the_standalone_calendar_window_is_summoned_like_the_plugin_was(self):
         """The calendar's window is a normal Qt window of class magpie-calendar since the move:
@@ -181,6 +193,37 @@ class WindowIdentity(unittest.TestCase):
         recorded = self.win("Magpie Calendar — Week", "0x1", "magpie-calendar")
         self.assertEqual(engine.assign([{"win": recorded}], [window]), {0: window})
         self.assertEqual(engine.match_floats([recorded], [window]), {0: window})
+
+    def test_plugin_era_and_native_mail_recordings_match_either_window(self):
+        """The mail left the shell at its cutover: a recording made under the shell's class
+        matches the live native window — titled with or without the envelope emoji — and the
+        reverse, in the tiled matcher and the floating matcher."""
+        for recorded, actual in [("\u2709\ufe0f Magpie Mail", "\u2709\ufe0f Magpie Mail"),
+                                 ("🐦 Magpie — Inbox", "\u2709\ufe0f Magpie Mail"),
+                                 ("\u2709\ufe0f Magpie Mail", "Magpie Mail")]:
+            with self.subTest(recorded=recorded, actual=actual):
+                window = self.win(actual, "0x2", "omamail-app")
+                self.assertEqual(engine.assign([{"win": self.win(recorded)}], [window]), {0: window})
+                self.assertEqual(engine.match_floats([self.win(recorded)], [window]), {0: window})
+        window = self.win("\u2709\ufe0f Magpie Mail", "0x2")
+        recorded = self.win("\u2709\ufe0f Magpie Mail — Inbox", "0x1", "omamail-app")
+        self.assertEqual(engine.assign([{"win": recorded}], [window]), {0: window})
+        self.assertEqual(engine.match_floats([recorded], [window]), {0: window})
+
+    def test_the_native_mail_class_alone_is_not_an_identity(self):
+        """A window of the mail's class with a stranger's title is not the mail: it goes by
+        class like any ordinary app, and no recording may claim it."""
+        win = {"class": "omamail-app", "title": "Something Else Entirely"}
+        self.assertEqual(engine.launcher_for_win(win, 3), engine.launcher_for("omamail-app", 3))
+        self.assertEqual(engine.app_identity(win), "omamail-app")
+
+    def test_the_native_mail_class_is_not_grabbed_for_the_calendar(self):
+        """The mail's own class with a Magpie Calendar title is a stranger: a standalone class
+        widens only its own app's identity, never another app's."""
+        recorded = self.win("Magpie Calendar")
+        actual = self.win("Magpie Calendar", "0x2", "omamail-app")
+        self.assertEqual(engine.assign([{"win": recorded}], [actual]), {})
+        self.assertEqual(engine.match_floats([recorded], [actual]), {})
 
     def test_the_standalone_class_is_not_grabbed_for_another_plugin(self):
         """The calendar's own class with a Magpie Mail title is a stranger: the standalone class

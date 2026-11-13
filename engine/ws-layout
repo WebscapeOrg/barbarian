@@ -347,26 +347,34 @@ PLACEHOLDER_TITLE = re.compile(r"^Barbarian · missing (\S+) · ([0-9a-f]{6})(?:
 # magpie-mail and falls back to magpie while the shell still answers unknown.
 #
 # ⚠️ A SUMMONS APP MAY LEAVE THE SHELL. Magpie Calendar became a standalone desktop app on
-# 2026-11-13 (Dave's C-029 in magpie-calendar): its window is a normal Qt window of its own
-# class, magpie-calendar, with the same title — no longer the shell's shared class. A
-# standalone class carries only its own app's titles (never another plugin's); unlike the
-# shell's class it names one real app, so a window of it with a stranger's title opens by class
-# as any ordinary app does, when a launcher for that class is known. Recordings from either era
-# reopen through the same SUMMONS command, which asks the app's opener first (it summons the
-# plugin while the plugin still exists and opens the app after the move) and then the plugin
-# ids, the shell answering `unknown` with exit 0 for one it lacks, so the output is checked —
-# never the exit code — for the fallback to reach the next id.
-STANDALONE_SUMMONS_CLASSES = {"magpie-calendar": "Magpie Calendar"}
+# 2026-11-13 (Dave's C-029 in magpie-calendar), and Magpie Mail followed to a native app
+# days later (mail C-080, enterprise C-129): its window is a normal Qt window of its own class,
+# with the same title — no longer the shell's shared class. A standalone class carries only its
+# own app's titles (never another plugin's); unlike the shell's class it names one real app, so
+# a window of it with a stranger's title opens by class as any ordinary app does, when a
+# launcher for that class is known. Recordings from either era reopen through the same SUMMONS
+# command, which opens the app's own way first (the calendar's opener script; the mail's
+# `magpie-mail` launcher) and then the plugin ids, the shell answering `unknown` with exit 0
+# for one it lacks, so the output is checked — never the exit code — for the fallback to reach
+# the next id. omamail-app is Qt's default class from the binary's name (the app sets no
+# desktop-file name); confirm it and the native title against the live window at the
+# cutover.
+STANDALONE_SUMMONS_CLASSES = {"magpie-calendar": "Magpie Calendar",
+                              "omamail-app": "✉️ Magpie Mail"}
 SUMMONS = {
-    "✉️ Magpie Mail": (
-        "sh -c '[ \"$(omarchy-shell shell summon magpie-mail '\\''{}'\\'')\" = ok ]"
-        " || omarchy-shell shell summon magpie '\\''{}'\\'''"
-    ),
+    "✉️ Magpie Mail": ("sh -c 'magpie-mail"
+                       " || { [ \"$(omarchy-shell shell summon magpie-mail '\\''{}'\\'')\" = ok ]"
+                       " || omarchy-shell shell summon magpie '\\''{}'\\''; }'"),
     "Magpie Calendar": ("sh -c 'python3 \"${XDG_DATA_HOME:-$HOME/.local/share}/magpie-calendar/open-magpie-calendar.py\""
                         " || { [ \"$(omarchy-shell shell summon magpie-calendar)\" = ok ]"
                         " || omarchy-shell shell summon skylark; }'"),
 }
-SUMMONS_ALIASES = {"Skylark": "Magpie Calendar", "🐦 Magpie": "✉️ Magpie Mail"}
+# The native app's window title carries no envelope emoji ("Magpie Mail", mail C-080), so the
+# plain prefix is an alias of the plugin-era one: whichever way the app titles itself, the
+# recording still matches. Both the native title and the omamail-app class are confirmed
+# against the live window at the cutover.
+SUMMONS_ALIASES = {"Skylark": "Magpie Calendar", "🐦 Magpie": "✉️ Magpie Mail",
+                   "Magpie Mail": "✉️ Magpie Mail"}
 
 
 def summons_title(win):

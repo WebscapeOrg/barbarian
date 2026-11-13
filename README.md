@@ -119,10 +119,13 @@ keeps in line.
 
 ## Reptile features
 
-Saved layouts can reopen Magpie Calendar and Magpie Mail through the shell. Magpie Calendar was
+Saved layouts reopen Magpie Calendar and Magpie Mail — through the apps' own way first (the
+calendar's opener script, the mail's `magpie-mail` launcher) and, while a machine still has the
+shell plugin, by summoning it. Magpie Calendar was
 called Skylark until 3 November 2026, and Magpie Mail was called Magpie until 8 November 2026;
 recordings that saved either under its old name reopen it without being saved again, including
-recordings made before reopening was supported. While a machine
+recordings made before reopening was supported, and recordings from the plugin era still match
+the standalone windows. While a machine
 still has a plugin under its old id, Barbarian falls back to the old id when the shell does not know
 the new one (`skylark` for `magpie-calendar`, `magpie` for `magpie-mail`). If Magpie Calendar is already open on another workspace, restore brings that
 window back.
