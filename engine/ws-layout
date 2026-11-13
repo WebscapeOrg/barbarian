@@ -357,10 +357,12 @@ PLACEHOLDER_TITLE = re.compile(r"^Barbarian · missing (\S+) · ([0-9a-f]{6})(?:
 # `magpie-mail` launcher) and then the plugin ids, the shell answering `unknown` with exit 0
 # for one it lacks, so the output is checked — never the exit code — for the fallback to reach
 # the next id. omamail-app is Qt's default class from the binary's name (the app sets no
-# desktop-file name); confirm it and the native title against the live window at the
-# cutover.
+# desktop-file name — and the app then set its desktopFileName to omamail, so both classes
+# exist while machines hold either build. Confirm the live class and title against the window
+# at the cutover.
 STANDALONE_SUMMONS_CLASSES = {"magpie-calendar": "Magpie Calendar",
-                              "omamail-app": "✉️ Magpie Mail"}
+                              "omamail-app": "✉️ Magpie Mail",
+                              "omamail": "✉️ Magpie Mail"}
 SUMMONS = {
     "✉️ Magpie Mail": ("sh -c 'magpie-mail"
                        " || { [ \"$(omarchy-shell shell summon magpie-mail '\\''{}'\\'')\" = ok ]"

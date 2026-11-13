@@ -76,7 +76,7 @@ class Summons(unittest.TestCase):
         """The mail's window is a normal Qt window of class omamail-app at the cutover, titled
         with or without the envelope emoji: both eras' classes and both titles carry the same
         SUMMONS command and the same identity."""
-        for klass in ("org.quickshell", "omamail-app"):
+        for klass in ("org.quickshell", "omamail-app", "omamail"):
             for title in ("\u2709\ufe0f Magpie Mail — Inbox", "Magpie Mail"):
                 with self.subTest(klass=klass, title=title):
                     win = {"class": klass, "title": title}
@@ -198,15 +198,16 @@ class WindowIdentity(unittest.TestCase):
         """The mail left the shell at its cutover: a recording made under the shell's class
         matches the live native window — titled with or without the envelope emoji — and the
         reverse, in the tiled matcher and the floating matcher."""
-        for recorded, actual in [("\u2709\ufe0f Magpie Mail", "\u2709\ufe0f Magpie Mail"),
-                                 ("🐦 Magpie — Inbox", "\u2709\ufe0f Magpie Mail"),
-                                 ("\u2709\ufe0f Magpie Mail", "Magpie Mail")]:
-            with self.subTest(recorded=recorded, actual=actual):
-                window = self.win(actual, "0x2", "omamail-app")
-                self.assertEqual(engine.assign([{"win": self.win(recorded)}], [window]), {0: window})
-                self.assertEqual(engine.match_floats([self.win(recorded)], [window]), {0: window})
+        for native_class in ("omamail-app", "omamail"):
+            for recorded, actual in [("\u2709\ufe0f Magpie Mail", "\u2709\ufe0f Magpie Mail"),
+                                     ("🐦 Magpie — Inbox", "\u2709\ufe0f Magpie Mail"),
+                                     ("\u2709\ufe0f Magpie Mail", "Magpie Mail")]:
+                with self.subTest(native_class=native_class, recorded=recorded, actual=actual):
+                    window = self.win(actual, "0x2", native_class)
+                    self.assertEqual(engine.assign([{"win": self.win(recorded)}], [window]), {0: window})
+                    self.assertEqual(engine.match_floats([self.win(recorded)], [window]), {0: window})
         window = self.win("\u2709\ufe0f Magpie Mail", "0x2")
-        recorded = self.win("\u2709\ufe0f Magpie Mail — Inbox", "0x1", "omamail-app")
+        recorded = self.win("\u2709\ufe0f Magpie Mail — Inbox", "0x1", "omamail")
         self.assertEqual(engine.assign([{"win": recorded}], [window]), {0: window})
         self.assertEqual(engine.match_floats([recorded], [window]), {0: window})
 
