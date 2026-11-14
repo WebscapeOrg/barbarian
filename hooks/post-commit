@@ -6,9 +6,13 @@
 # nothing reloads them), and arms a waiter that finishes the job the moment that clears, so this
 # is safe at any hour.
 #
-# On the machine that owns the mirror ships the same commit also goes to them (the MacBook, the backup machine)
-# through the machine repo's ship-sync service, which rsyncs this repo alongside
-# the private machine repo and re-runs setup-portable on each ship. SER8 only: everywhere else that
+# On the machine that owns the mirror ships the same commit also goes to them through the machine
+# repo's ship-sync service, which rsyncs this repo alongside the private machine repo and
+# re-runs setup-portable on each ship. ⚠️ THE MACHINE NAMES LIVE IN hooks/ships.local — a local,
+# uncommitted file — because they are private and stay out of this public repository: the 10 Nov
+# 2026 name scrub had to de-prose them here, and a scrub must never be able to break running
+# code again. ships.local defines SHIP_HOST (the owning machine's hostname), MACHINE_GIT (the
+# machine repo's .git) and SHIPS (the ship hostnames). Without the file, or anywhere else, this
 # half is a no-op.
 HERE="$(git rev-parse --show-toplevel 2>/dev/null)"
 git diff-tree --no-commit-id --name-only -r -m HEAD 2>/dev/null \
@@ -16,9 +20,10 @@ git diff-tree --no-commit-id --name-only -r -m HEAD 2>/dev/null \
 
 [ -n "$HERE" ] && [ -x "$HERE/install.sh" ] && "$HERE/install.sh"
 
-[ "$(hostname)" = the-main-machine ] || exit 0
-[ -d "the machine repo's checkout/.git" ] || exit 0
-for ship in the MacBook the backup machine; do
+[ -r "$HERE/hooks/ships.local" ] && . "$HERE/hooks/ships.local"
+[ -n "${SHIP_HOST:-}" ] && [ "$(hostname)" = "$SHIP_HOST" ] || exit 0
+[ -n "${MACHINE_GIT:-}" ] && [ -d "$MACHINE_GIT" ] || exit 0
+for ship in ${SHIPS:-}; do
   systemctl --user start --no-block "ship-sync@$ship.service" 2>/dev/null || true
 done
 exit 0
