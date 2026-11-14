@@ -43,6 +43,10 @@ class Backgrounds(unittest.TestCase):
         self.own_bg.mkdir(parents=True)
         self.themes = self.tmp / "themes"
         (self.themes / "cat/backgrounds").mkdir(parents=True)
+        # As Omarchy 4.5 ships it: the generated directory mirrors the theme's own folder, and
+        # the repair settles every pin on the shipped copy.
+        for name in ("1-a.jpg", "2-b.jpg", "3-c.jpg"):
+            (self.themes / "cat/backgrounds" / name).write_bytes(b"")
         self.wsbg = self.home / ".config/omarchy/workspace-backgrounds"
         self.pins = self.wsbg / "cat"
         self.pins.mkdir(parents=True)
@@ -112,7 +116,8 @@ class Backgrounds(unittest.TestCase):
         self.run_script(REMOVE, self.theme_bg / "2-b.jpg")
         self.run_script(RESTORE, self.theme_bg / "2-b.jpg", 2)
         self.assertIsNone(self.hidden())
-        self.assertEqual(os.readlink(self.pins / "ws2.jpg"), str(self.theme_bg / "2-b.jpg"))
+        self.assertEqual(os.readlink(self.pins / "ws2.jpg"),
+                         str(self.themes / "cat/backgrounds/2-b.jpg"))
 
     def test_restore_leaves_the_other_hidden_images_hidden(self):
         self.run_script(REMOVE, self.theme_bg / "1-a.jpg")
@@ -242,12 +247,45 @@ class Omarchy45Repair(unittest.TestCase):
         self.assertIn("5-gone.jpg", log)
         self.assertEqual(self.paint(), "2-b.jpg")  # Auto: desk 5 wraps onto the theme's list
 
-    def test_dave_s_own_copy_beats_the_generated_directory_for_a_repair(self):
+    def test_dave_s_own_copy_beats_shipped_and_generated_for_a_repair(self):
         (self.own_bg / "3-c.png").write_bytes(b"")
+        (self.shipped / "3-c.webp").write_bytes(b"")
         (self.theme_bg / "3-c.jpg").unlink()
         (self.pins / "ws3.jpg").symlink_to(self.theme_bg / "3-c.jpg")
         self.run_engine(3)
         self.assertEqual(os.readlink(self.pins / "ws3.png"), str(self.own_bg / "3-c.png"))
+
+    def test_a_pin_found_only_in_the_generated_dir_is_not_pinned_into_it(self):
+        (self.theme_bg / "4-d.webp").write_bytes(b"")   # generated holds it; shipped and user do not
+        (self.pins / "ws4.jpg").symlink_to(self.theme_bg / "4-d.webp")
+        self.run_engine(4)
+        self.assertEqual(list(self.pins.glob("ws4*")), [])
+        self.assertIn("ws4.jpg", (self.wsbg / "repair-log").read_text())
+
+    def test_repair_is_idempotent_across_runs(self):
+        (self.shipped / "2-b.webp").write_bytes(b"")
+        (self.theme_bg / "2-b.jpg").unlink()
+        (self.pins / "ws2.jpg").symlink_to(self.theme_bg / "2-b.jpg")
+        self.run_engine(2)
+        first = os.readlink(self.pins / "ws2.webp")
+        self.run_engine(2)
+        self.assertEqual(os.readlink(self.pins / "ws2.webp"), first)
+        log = self.wsbg / "repair-log"
+        self.assertFalse(log.exists() and "ws2.jpg" in log.read_text())
+
+    def test_a_hidden_images_file_without_a_trailing_newline_survives_the_repair(self):
+        (self.shipped / "2-b.webp").write_bytes(b"")
+        (self.theme_bg / "2-b.jpg").unlink()
+        (self.pins / "hidden-images").write_text("2-b.jpg")   # no trailing newline
+        self.run_engine(1)
+        self.assertEqual((self.pins / "hidden-images").read_text().splitlines(), ["2-b.webp"])
+
+    def test_a_universal_blanket_is_repaired_against_the_current_theme(self):
+        (self.shipped / "1-a.webp").write_bytes(b"")
+        (self.wsbg / "all.jpg").symlink_to(self.theme_bg / "1-a.jpg")
+        self.run_engine(2)
+        self.assertEqual(os.readlink(self.wsbg / "all.webp"), str(self.shipped / "1-a.webp"))
+        self.assertEqual(self.paint(), "all.webp")   # no desk pin: the blanket covers desk 2
 
     def test_a_hidden_image_follows_its_rename(self):
         (self.shipped / "2-b.webp").write_bytes(b"")

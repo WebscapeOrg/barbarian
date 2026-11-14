@@ -67,52 +67,59 @@ theme_backgrounds() {
 # nearly every bundled image was renamed (most to .webp, some themes lost theirs outright), and
 # current/theme stopped being a symlink to the shipped theme and became a generated directory. A
 # pin made before that points through that directory, so it either dangles, or — worse — silently
-# resolves into whatever theme is CURRENT now, showing the wrong theme's picture. At startup,
-# before the first paint, every pin is re-resolved against its OWN theme: the shipped folder
-# first, then the user's additions for that theme, then the generated directory as a last
-# resort. Found under a new extension: the pin is repointed and keeps working. Found nowhere:
-# the image is gone from the machine, the pin is dropped with a line in repair-log, and the desk
-# falls back down the chain (all.<ext>, then Auto) — a pin to nothing was never showing anyway.
-# The same carries a hidden-images entry across a rename, or the hidden image would come back
-# from the dead the first time the theme listed its new name.
+# resolves into whatever theme is CURRENT now, showing the wrong theme's picture. At startup and
+# on every one-shot apply, each pin is re-resolved against its OWN theme: Dave's additions for
+# that theme first (the engine's own list puts them first), then the shipped folder. The
+# generated directory is deliberately NOT a base: it is rewritten on every theme change, so a
+# pin into it is never stable, and an image found only there is treated as gone. Found under a
+# new extension: the pin is repointed and keeps working. Found nowhere: the image has left the
+# machine, the pin is dropped with a line in repair-log, and the desk falls back down the chain
+# (all.<ext>, then Auto) — a pin to nothing was never showing anyway. The same carries a
+# hidden-images entry across a rename, or the hidden image would come back from the dead the
+# first time the theme listed its new name.
+repair_pin() { # <pin file> <theme name>
+  local pin="$1" theme="$2" target stem found base ext
+  target="$(readlink "$pin")"
+  if [ -e "$pin" ]; then
+    case "$target" in "$STATE"/theme/*) ;; *) return 0 ;; esac
+  fi
+  stem="${target##*/}"; stem="${stem%.*}"
+  found=""
+  for base in "$HOME/.config/omarchy/backgrounds/$theme" \
+              "${OMARCHY_THEMES_DIR:-/usr/share/omarchy/themes}/$theme/backgrounds"; do
+    for ext in webp jpg jpeg png; do
+      if [ -f "$base/$stem.$ext" ]; then found="$base/$stem.$ext"; break 2; fi
+    done
+  done
+  if [ -n "$found" ]; then
+    [ "$found" = "$target" ] && return 0
+    rm -f "$pin"
+    ln -sfn "$found" "${pin%.*}.${found##*.}"
+  else
+    rm -f "$pin"
+    printf '%s %s dropped %s -> %s (the image is gone from the theme)\n' \
+      "$(date '+%F %T')" "$theme" "${pin##*/}" "$target" >> "$HERE/repair-log"
+  fi
+}
+
 repair_pins() {
-  local themes_dir="${OMARCHY_THEMES_DIR:-/usr/share/omarchy/themes}"
-  local theme_dir theme pin target stem found base ext name replaced
+  local theme_dir theme pin name replaced found stem ext base
   for theme_dir in "$HERE"/*/; do
     [ -d "$theme_dir" ] || continue
     theme="${theme_dir%/}"; theme="${theme##*/}"
     [ "$theme" = "solids" ] && continue
     for pin in "$theme_dir"ws*.* "$theme_dir"all.*; do
       [ -L "$pin" ] || continue
-      target="$(readlink "$pin")"
-      if [ -e "$pin" ]; then
-        case "$target" in "$STATE"/theme/*) ;; *) continue ;; esac
-      fi
-      stem="${target##*/}"; stem="${stem%.*}"
-      found=""
-      for base in "$themes_dir/$theme/backgrounds" \
-                  "$HOME/.config/omarchy/backgrounds/$theme" \
-                  "$(readlink -f "$STATE/theme" 2>/dev/null)/backgrounds"; do
-        for ext in webp jpg jpeg png; do
-          if [ -f "$base/$stem.$ext" ]; then found="$base/$stem.$ext"; break 2; fi
-        done
-      done
-      if [ -n "$found" ]; then
-        rm -f "$pin"
-        ln -sfn "$found" "${pin%.*}.${found##*.}"
-      else
-        rm -f "$pin"
-        printf '%s %s dropped %s -> %s (the image is gone from the theme)\n' \
-          "$(date '+%F %T')" "$theme" "${pin##*/}" "$target" >> "$HERE/repair-log"
-      fi
+      repair_pin "$pin" "$theme"
     done
     if [ -f "$theme_dir/hidden-images" ]; then
       replaced=""
-      while IFS= read -r name; do
+      while IFS= read -r name || [ -n "$name" ]; do
         [ -n "$name" ] || continue
         stem="${name%.*}"
         found=""
-        for base in "$themes_dir/$theme/backgrounds" "$HOME/.config/omarchy/backgrounds/$theme"; do
+        for base in "$HOME/.config/omarchy/backgrounds/$theme" \
+                    "${OMARCHY_THEMES_DIR:-/usr/share/omarchy/themes}/$theme/backgrounds"; do
           for ext in webp jpg jpeg png; do
             if [ -f "$base/$stem.$ext" ] && [ ! -f "$base/$name" ]; then
               found="$stem.$ext"; break 2
@@ -123,6 +130,12 @@ repair_pins() {
       done < "$theme_dir/hidden-images"
       printf '%s' "$replaced" > "$theme_dir/hidden-images"
     fi
+  done
+  # A universal hand-dropped blanket (all.<ext> at the top level) is repaired against the
+  # current theme, the one whose images it stands in for.
+  for pin in "$HERE"/all.*; do
+    [ -L "$pin" ] || continue
+    repair_pin "$pin" "$(cat "$STATE/theme.name" 2>/dev/null)"
   done
 }
 

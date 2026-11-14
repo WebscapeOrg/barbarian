@@ -57,8 +57,8 @@ if [ "$CHOICE" != "default" ]; then
   case "$SRC" in
     "${XDG_STATE_HOME:-$HOME/.local/state}"/omarchy/current/theme/*)
       stem="${SRC##*/}"; stem="${stem%.*}"
-      for base in "${OMARCHY_THEMES_DIR:-/usr/share/omarchy/themes}/$THEME/backgrounds" \
-                  "$HOME/.config/omarchy/backgrounds/$THEME"; do
+      for base in "$HOME/.config/omarchy/backgrounds/$THEME" \
+                  "${OMARCHY_THEMES_DIR:-/usr/share/omarchy/themes}/$THEME/backgrounds"; do
         for ext in webp jpg jpeg png; do
           if [ -f "$base/$stem.$ext" ]; then SRC="$base/$stem.$ext"; break 2; fi
         done
