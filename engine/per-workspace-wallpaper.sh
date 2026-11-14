@@ -50,7 +50,7 @@ fi
 
 # The theme's backgrounds, sorted — Omarchy names them `0-…`, `1-…`, so sort order IS the intended
 # order. Re-read on every lookup rather than cached at start: a theme change must take effect without
-# restarting the watcher.
+# restarting the watcher. WebP since Omarchy 4.5, which converted nearly every bundled image to it.
 theme_backgrounds() {
   # Two folders, merged and sorted, exactly the list `omarchy theme bg next` cycles:
   # the user's own additions for this theme (~/.config/omarchy/backgrounds/<name> —
@@ -60,7 +60,70 @@ theme_backgrounds() {
   dir="$(readlink -f "$STATE/theme" 2>/dev/null)/backgrounds"
   user="$HOME/.config/omarchy/backgrounds/$(cat "$STATE/theme.name" 2>/dev/null)"
   find -L "$user" "$dir" -maxdepth 1 -type f \
-    \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' \) 2>/dev/null | sort
+    \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' \) 2>/dev/null | sort
+}
+
+# ⚠️ OMARCHY 4.5 BROKE OLD PINS, AND THIS REPAIRS THEM (14 Nov 2026). Two changes upstream did it:
+# nearly every bundled image was renamed (most to .webp, some themes lost theirs outright), and
+# current/theme stopped being a symlink to the shipped theme and became a generated directory. A
+# pin made before that points through that directory, so it either dangles, or — worse — silently
+# resolves into whatever theme is CURRENT now, showing the wrong theme's picture. At startup,
+# before the first paint, every pin is re-resolved against its OWN theme: the shipped folder
+# first, then the user's additions for that theme, then the generated directory as a last
+# resort. Found under a new extension: the pin is repointed and keeps working. Found nowhere:
+# the image is gone from the machine, the pin is dropped with a line in repair-log, and the desk
+# falls back down the chain (all.<ext>, then Auto) — a pin to nothing was never showing anyway.
+# The same carries a hidden-images entry across a rename, or the hidden image would come back
+# from the dead the first time the theme listed its new name.
+repair_pins() {
+  local themes_dir="${OMARCHY_THEMES_DIR:-/usr/share/omarchy/themes}"
+  local theme_dir theme pin target stem found base ext name replaced
+  for theme_dir in "$HERE"/*/; do
+    [ -d "$theme_dir" ] || continue
+    theme="${theme_dir%/}"; theme="${theme##*/}"
+    [ "$theme" = "solids" ] && continue
+    for pin in "$theme_dir"ws*.* "$theme_dir"all.*; do
+      [ -L "$pin" ] || continue
+      target="$(readlink "$pin")"
+      if [ -e "$pin" ]; then
+        case "$target" in "$STATE"/theme/*) ;; *) continue ;; esac
+      fi
+      stem="${target##*/}"; stem="${stem%.*}"
+      found=""
+      for base in "$themes_dir/$theme/backgrounds" \
+                  "$HOME/.config/omarchy/backgrounds/$theme" \
+                  "$(readlink -f "$STATE/theme" 2>/dev/null)/backgrounds"; do
+        for ext in webp jpg jpeg png; do
+          if [ -f "$base/$stem.$ext" ]; then found="$base/$stem.$ext"; break 2; fi
+        done
+      done
+      if [ -n "$found" ]; then
+        rm -f "$pin"
+        ln -sfn "$found" "${pin%.*}.${found##*.}"
+      else
+        rm -f "$pin"
+        printf '%s %s dropped %s -> %s (the image is gone from the theme)\n' \
+          "$(date '+%F %T')" "$theme" "${pin##*/}" "$target" >> "$HERE/repair-log"
+      fi
+    done
+    if [ -f "$theme_dir/hidden-images" ]; then
+      replaced=""
+      while IFS= read -r name; do
+        [ -n "$name" ] || continue
+        stem="${name%.*}"
+        found=""
+        for base in "$themes_dir/$theme/backgrounds" "$HOME/.config/omarchy/backgrounds/$theme"; do
+          for ext in webp jpg jpeg png; do
+            if [ -f "$base/$stem.$ext" ] && [ ! -f "$base/$name" ]; then
+              found="$stem.$ext"; break 2
+            fi
+          done
+        done
+        replaced+="${found:-$name}"$'\n'
+      done < "$theme_dir/hidden-images"
+      printf '%s' "$replaced" > "$theme_dir/hidden-images"
+    fi
+  done
 }
 
 # Which image workspace N should show. An explicit ws<N>.<ext> beats everything; failing that
@@ -185,9 +248,14 @@ apply() {
 # moving a pin, because the watcher half below only wakes on workspace SWITCHES. Same
 # rules, same code — the resolution logic lives only here.
 if [ "${1:-}" = "apply" ]; then
+  repair_pins
   apply "${2:-$(hyprctl activeworkspace -j 2>/dev/null | grep -oP '"id":\s*\K[0-9]+' | head -1)}"
   exit 0
 fi
+
+# The pin repair runs before the first paint so a desk is never left showing a stale or wrong
+# image while its pin is silently broken (see repair_pins for what Omarchy 4.5 did).
+repair_pins
 
 # Paint the workspace we start on, so the wallpaper is right before the first switch rather than
 # after it.

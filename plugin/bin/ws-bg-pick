@@ -47,6 +47,24 @@ rm -f "$PINDIR/ws$N".*
 if [ "$CHOICE" != "default" ]; then
   SRC="$(realpath "$CHOICE")"
   [ -f "$SRC" ] || { echo "ws-bg-pick: no such image: $SRC" >&2; exit 1; }
+  # ⚠️ NEVER PIN THROUGH ~/.local/state/omarchy/current/theme. Omarchy 4.5 made that a
+  # generated directory that is rewritten whenever the theme changes, so a pin into it either
+  # dangles or silently resolves into whatever theme is current later — the wrong picture,
+  # shown confidently. The picker offers images from that directory, so re-point the choice at
+  # the pin's own theme's stable copy first: the shipped folder, then the user's additions.
+  # per-workspace-wallpaper.sh's repair_pins is the owner of this logic; this is the pick-time
+  # half that keeps NEW pins stable.
+  case "$SRC" in
+    "${XDG_STATE_HOME:-$HOME/.local/state}"/omarchy/current/theme/*)
+      stem="${SRC##*/}"; stem="${stem%.*}"
+      for base in "${OMARCHY_THEMES_DIR:-/usr/share/omarchy/themes}/$THEME/backgrounds" \
+                  "$HOME/.config/omarchy/backgrounds/$THEME"; do
+        for ext in webp jpg jpeg png; do
+          if [ -f "$base/$stem.$ext" ]; then SRC="$base/$stem.$ext"; break 2; fi
+        done
+      done
+      ;;
+  esac
   ext="${SRC##*.}"
   ln -sf "$SRC" "$PINDIR/ws$N.$ext"
 fi

@@ -41,6 +41,8 @@ class Backgrounds(unittest.TestCase):
             (self.theme_bg / name).write_bytes(b"")
         self.own_bg = self.home / ".config/omarchy/backgrounds/cat"
         self.own_bg.mkdir(parents=True)
+        self.themes = self.tmp / "themes"
+        (self.themes / "cat/backgrounds").mkdir(parents=True)
         self.wsbg = self.home / ".config/omarchy/workspace-backgrounds"
         self.pins = self.wsbg / "cat"
         self.pins.mkdir(parents=True)
@@ -63,7 +65,7 @@ class Backgrounds(unittest.TestCase):
     def env(self):
         return {"HOME": str(self.home), "XDG_STATE_HOME": str(self.home / ".local/state"),
                 "PATH": f"{self.bin}:{os.environ['PATH']}", "CALLS": str(self.calls),
-                "XDG_RUNTIME_DIR": str(self.tmp)}
+                "XDG_RUNTIME_DIR": str(self.tmp), "OMARCHY_THEMES_DIR": str(self.themes)}
 
     def run_script(self, script, *args):
         result = subprocess.run([str(script), *map(str, args)], capture_output=True, text=True,
@@ -157,6 +159,117 @@ class Backgrounds(unittest.TestCase):
         self.assertEqual(self.auto_image(1), "1-a.jpg")
         self.assertEqual(os.readlink(self.state / "background"), str(self.own_bg / "1-a.jpg"))
         self.assertEqual(self.auto_image(2), "2-b.jpg")
+
+
+class Omarchy45Repair(unittest.TestCase):
+    """Omarchy 4.5 renamed the bundled backgrounds (most to .webp) and made current/theme a
+    generated directory rather than a symlink. Pins that pointed through it dangle — or
+    silently resolve into whatever theme is current — so every run repairs them against their
+    own theme first: shipped, then Dave's additions, then the generated directory."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.home = self.tmp / "home"
+        self.state = self.home / ".local/state/omarchy/current"
+        self.theme_bg = self.state / "theme/backgrounds"
+        self.theme_bg.mkdir(parents=True)
+        (self.state / "theme.name").write_text("cat\n")
+        for name in ("1-a.jpg", "2-b.jpg", "3-c.jpg"):
+            (self.theme_bg / name).write_bytes(b"")
+        self.themes = self.tmp / "themes"
+        self.shipped = self.themes / "cat/backgrounds"
+        self.shipped.mkdir(parents=True)
+        self.own_bg = self.home / ".config/omarchy/backgrounds/cat"
+        self.own_bg.mkdir(parents=True)
+        self.wsbg = self.home / ".config/omarchy/workspace-backgrounds"
+        self.pins = self.wsbg / "cat"
+        self.pins.mkdir(parents=True)
+        shutil.copy(ENGINE, self.wsbg / ENGINE.name)
+        self.bin = self.tmp / "bin"
+        self.bin.mkdir()
+        self.calls = self.tmp / "calls"
+        self.calls.touch()
+        for name, body in (("omarchy-shell", "exit 0"),
+                           ("hyprctl", 'echo \'{"id": 9, "name": "9"}\'')):
+            path = self.bin / name
+            path.write_text(STUB.format(body=body))
+            path.chmod(0o755)
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def env(self):
+        return {"HOME": str(self.home), "XDG_STATE_HOME": str(self.home / ".local/state"),
+                "PATH": f"{self.bin}:{os.environ['PATH']}", "CALLS": str(self.calls),
+                "XDG_RUNTIME_DIR": str(self.tmp), "OMARCHY_THEMES_DIR": str(self.themes)}
+
+    def run_engine(self, desk):
+        result = subprocess.run([str(self.wsbg / ENGINE.name), "apply", str(desk)],
+                                capture_output=True, text=True, env=self.env())
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def paint(self):
+        background = self.state / "background"
+        return os.readlink(background).rsplit("/", 1)[-1] if background.is_symlink() else None
+
+    def test_webp_images_are_part_of_the_theme_s_list(self):
+        (self.theme_bg / "4-d.webp").write_bytes(b"")
+        self.run_engine(4)
+        self.assertEqual(self.paint(), "4-d.webp")
+
+    def test_a_dangling_pin_is_repointed_to_the_renamed_image(self):
+        (self.shipped / "2-b.webp").write_bytes(b"")
+        (self.theme_bg / "2-b.jpg").unlink()
+        (self.pins / "ws2.jpg").symlink_to(self.theme_bg / "2-b.jpg")
+        self.run_engine(2)
+        self.assertEqual(sorted(p.name for p in self.pins.glob("ws*")), ["ws2.webp"])
+        self.assertEqual(os.readlink(self.pins / "ws2.webp"), str(self.shipped / "2-b.webp"))
+        self.assertEqual(self.paint(), "ws2.webp")
+
+    def test_a_live_pin_through_the_generated_dir_is_made_stable(self):
+        (self.shipped / "1-a.webp").write_bytes(b"")
+        (self.pins / "ws1.jpg").symlink_to(self.theme_bg / "1-a.jpg")
+        self.run_engine(1)
+        self.assertEqual(sorted(p.name for p in self.pins.glob("ws*")), ["ws1.webp"])
+        self.assertEqual(os.readlink(self.pins / "ws1.webp"), str(self.shipped / "1-a.webp"))
+
+    def test_a_pin_whose_image_left_the_theme_entirely_is_dropped_and_logged(self):
+        (self.pins / "ws5.jpg").symlink_to(self.theme_bg / "5-gone.jpg")
+        self.run_engine(5)
+        self.assertEqual(list(self.pins.glob("ws*")), [])
+        log = (self.wsbg / "repair-log").read_text()
+        self.assertIn("ws5.jpg", log)
+        self.assertIn("5-gone.jpg", log)
+        self.assertEqual(self.paint(), "2-b.jpg")  # Auto: desk 5 wraps onto the theme's list
+
+    def test_dave_s_own_copy_beats_the_generated_directory_for_a_repair(self):
+        (self.own_bg / "3-c.png").write_bytes(b"")
+        (self.theme_bg / "3-c.jpg").unlink()
+        (self.pins / "ws3.jpg").symlink_to(self.theme_bg / "3-c.jpg")
+        self.run_engine(3)
+        self.assertEqual(os.readlink(self.pins / "ws3.png"), str(self.own_bg / "3-c.png"))
+
+    def test_a_hidden_image_follows_its_rename(self):
+        (self.shipped / "2-b.webp").write_bytes(b"")
+        (self.theme_bg / "2-b.jpg").unlink()
+        (self.pins / "hidden-images").write_text("2-b.jpg\n")
+        self.run_engine(1)
+        self.assertEqual((self.pins / "hidden-images").read_text().splitlines(), ["2-b.webp"])
+        # The renamed image stays hidden on Auto: desk 2 takes the next one, not it.
+        self.assertEqual(self.paint(), "1-a.jpg")
+        background = self.state / "background"
+        background.unlink()
+        self.run_engine(2)
+        self.assertEqual(self.paint(), "3-c.jpg")
+
+    def test_ws_bg_pick_never_pins_through_the_generated_directory(self):
+        (self.shipped / "3-c.jpg").write_bytes(b"")
+        result = subprocess.run([str(ROOT / "plugin/bin/ws-bg-pick"), "3",
+                                 str(self.theme_bg / "3-c.jpg")],
+                                capture_output=True, text=True,
+                                env={**self.env(), "CALLS": str(self.calls)})
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(os.readlink(self.pins / "ws3.jpg"), str(self.shipped / "3-c.jpg"))
 
 
 if __name__ == "__main__":
