@@ -1176,7 +1176,7 @@ Panel {
       canRename = String(tail4[0] || "").trim() !== ""
       var bgs = [], bl = String(tail4b[0] || "").split("\n")
       for (var bi = 0; bi < bl.length; bi++)
-        if (/\.(jpg|jpeg|png)$/i.test(bl[bi].trim())) bgs.push(bl[bi].trim())
+        if (/\.(jpg|jpeg|png|webp)$/i.test(bl[bi].trim())) bgs.push(bl[bi].trim())
       bgThemeList = bgs
       // Black first, then the theme's own colours, deduped (last-horizon's blue IS its
       // accent) — these become the solid swatches.

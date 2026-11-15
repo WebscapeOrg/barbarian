@@ -41,6 +41,15 @@ class QtCompatibility(unittest.TestCase):
         self.assertIn("readonly property Item closeControl: closeToggle", source)
 
 
+class PanelSources(unittest.TestCase):
+    def test_the_background_picker_lists_webp(self):
+        """Omarchy 4.5 ships its bundled backgrounds almost only as .webp; a picker list that
+        reads jpg/jpeg/png alone would show nearly nothing (the engine side went in with the
+        4.5 pin repair)."""
+        source = (Path(__file__).resolve().parent.parent / "plugin/Panel.qml").read_text()
+        self.assertIn("/\.(jpg|jpeg|png|webp)$/i", source)
+
+
 class FeatureTest(unittest.TestCase):
     def setUp(self):
         self.scratch = tempfile.TemporaryDirectory(prefix="barbarian-features-")
