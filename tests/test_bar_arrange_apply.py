@@ -25,6 +25,102 @@ STOCK = {"bar": {"layout": {
 }}}
 
 
+STOCK_45 = {"bar": {"layout": {
+    "left": [{"id": "omarchy.menu"}, {"id": "omarchy.workspaces"}],
+    "centerBegin": [{"id": "omarchy.indicators"}],
+    "center": [{"id": "enterprise.workspaces"}],
+    "centerEnd": [{"id": "omarchy.system-update"}],
+    "right": [{"id": "omarchy.clock"}, {"id": "atlas.arrange"}],
+}}}
+
+
+class CentreSections(unittest.TestCase):
+    """Omarchy 4.5 split the centre into centerBegin/center/centerEnd; the apply script
+    carries five lanes there and folds the flanks into `center` on a shell without the split."""
+
+    def setUp(self):
+        self.home = Path(tempfile.mkdtemp())
+        (self.home / ".config/omarchy").mkdir(parents=True)
+        self.shell = self.home / ".config/omarchy/shell.json"
+        self.hidden = self.home / ".config/omarchy/bar-hidden.json"
+        self.write(STOCK_45, {"left": [], "centerBegin": [], "center": [],
+                              "centerEnd": [], "right": []})
+
+    def write(self, layout, hidden=None):
+        self.shell.write_text(json.dumps(layout, indent=2) + "\n")
+        self.hidden.write_text(json.dumps(hidden or {"left": [], "centerBegin": [], "center": [],
+                                                     "centerEnd": [], "right": []}) + "\n")
+
+    def run_apply(self, *args):
+        return subprocess.run([str(SCRIPT), *args], capture_output=True, text=True,
+                              env={**os.environ, "HOME": str(self.home)})
+
+    def layout(self):
+        return json.loads(self.shell.read_text())["bar"]["layout"]
+
+    def ids(self, lane):
+        return [entry["id"] for entry in self.layout()[lane]]
+
+    def parked(self):
+        return json.loads(self.hidden.read_text())
+
+    def test_a_widget_moves_whole_between_the_centre_sections(self):
+        result = self.run_apply("CB:omarchy.indicators", "CB:omarchy.system-update")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.ids("centerBegin"), ["omarchy.indicators", "omarchy.system-update"])
+        self.assertEqual(self.ids("centerEnd"), [])
+        self.assertEqual(self.ids("center"), ["enterprise.workspaces"])
+
+    def test_a_centre_widget_hides_and_returns_in_its_own_section(self):
+        result = self.run_apply("CE:omarchy.system-update:hidden")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.ids("centerEnd"), [])
+        self.assertEqual(self.parked()["centerEnd"][0]["entry"]["id"], "omarchy.system-update")
+        result = self.run_apply("CB:omarchy.indicators", "CE:omarchy.system-update")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.ids("centerEnd"), ["omarchy.system-update"])
+        self.assertEqual(self.parked()["centerEnd"], [])
+
+    def test_unnamed_centre_entries_keep_their_own_sections(self):
+        result = self.run_apply("R:atlas.arrange", "R:omarchy.clock")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.ids("centerBegin"), ["omarchy.indicators"])
+        self.assertEqual(self.ids("center"), ["enterprise.workspaces"])
+        self.assertEqual(self.ids("centerEnd"), ["omarchy.system-update"])
+
+    def test_the_workspaces_strip_may_be_placed_in_a_centre_section(self):
+        result = self.run_apply("WS:omarchy.workspaces:centerEnd")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.ids("left"), ["omarchy.menu"])
+        self.assertEqual(self.ids("centerEnd")[0], "omarchy.workspaces")
+
+    def test_a_4_5_panel_works_against_a_pre_4_5_shell_by_folding(self):
+        self.write(STOCK, {"left": [], "center": [], "right": []})
+        result = self.run_apply("CB:omarchy.workspaces", "R:atlas.arrange",
+                                "R:omarchy.clock", "CE:omarchy.menu:hidden")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        # CB and CE fold into the one centre lane; left keeps its unnamed menu… which CE hid.
+        self.assertEqual(self.ids("left"), [])
+        self.assertEqual(self.ids("center"), ["omarchy.workspaces"])
+        self.assertEqual(self.ids("right"), ["atlas.arrange", "omarchy.clock", "omarchy.power"])
+        self.assertEqual(self.parked()["center"][0]["entry"]["id"], "omarchy.menu")
+
+    def test_a_widget_from_the_repair_pass_may_default_into_a_centre_section(self):
+        # The repair pass reads installed manifests; one whose defaultSection names a 4.5
+        # centre section must not be refused as malformed.
+        plugin = self.home / ".config/omarchy/plugins/weather.test"
+        plugin.mkdir(parents=True)
+        (plugin / "manifest.json").write_text(json.dumps(
+            {"schemaVersion": 1, "id": "weather.test", "name": "Weather", "version": "1.0.0",
+             "kinds": ["bar-widget", "service"], "entryPoints": {"barWidget": "Main.qml"},
+             "barWidget": {"defaultSection": "centerEnd"}}))
+        hidden = self.parked()
+        hidden["centerEnd"] = [{"index": 0, "entry": {"id": "weather.test"}}]
+        self.hidden.write_text(json.dumps(hidden) + "\n")
+        result = self.run_apply("--repair-hidden")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+
 class Apply(unittest.TestCase):
     def setUp(self):
         self.home = Path(tempfile.mkdtemp())

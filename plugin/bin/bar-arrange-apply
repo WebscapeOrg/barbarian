@@ -68,11 +68,11 @@ for arg in sys.argv[1:]:
         continue
     if arg.startswith("WS:"):
         _, ws_id, ws_place = arg.split(":")
-        if ws_place not in ("left", "center", "right"):
+        if ws_place not in ("left", "centerBegin", "center", "centerEnd", "right"):
             sys.exit(f"bar-arrange-apply: bad WS placement '{ws_place}'")
         continue
     parts = arg.split(":")
-    if parts[0] in ("L", "C", "R"):
+    if parts[0] in ("L", "CB", "C", "CE", "R"):
         lane, wid = parts[0], parts[1]
         hid = len(parts) > 2 and parts[2] == "hidden"
     else:  # bare id — the pre-lane call form; those panels only knew the right section
@@ -85,8 +85,17 @@ if repair_hidden and not os.path.exists(path):
 with open(path) as f:
     data = json.load(f)
 layout = data["bar"]["layout"]
-LANES = ("L", "C", "R")
-KEYS = {"L": "left", "C": "center", "R": "right"}
+# Omarchy 4.5 split the bar's centre into three sections — centerBegin, center, centerEnd —
+# so the lane set grows to five there. A shell without the split keeps its three sections and
+# the two centre-flank codes fold into its one centre lane, so a panel built for either world
+# works against the other: its CB/CE rows simply land in `center`, where pre-4.5 shows them.
+split = "centerBegin" in layout or "centerEnd" in layout
+LANES = ("L", "CB", "C", "CE", "R") if split else ("L", "C", "R")
+KEYS = {"L": "left", "C": "center", "R": "right",
+        "CB": "centerBegin" if split else "center",
+        "CE": "centerEnd" if split else "center"}
+if not split:
+    want = [({"CB": "C", "CE": "C"}.get(lane, lane), wid, hid) for lane, wid, hid in want]
 sections = {ln: layout.get(KEYS[ln], []) for ln in LANES}
 
 def manifest_id(manifest):
@@ -112,7 +121,8 @@ def manifest_id(manifest):
         return None
     metadata = manifest.get("barWidget")
     if isinstance(metadata, dict) and "defaultSection" in metadata \
-            and str(metadata["defaultSection"]) not in ("left", "center", "right"):
+            and str(metadata["defaultSection"]) not in \
+            ("left", "centerBegin", "center", "centerEnd", "right"):
         return None
     return wid
 
