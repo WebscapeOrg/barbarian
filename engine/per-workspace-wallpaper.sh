@@ -91,6 +91,19 @@ repair_pin() { # <pin file> <theme name>
       if [ -f "$base/$stem.$ext" ]; then found="$base/$stem.$ext"; break 2; fi
     done
   done
+  # 4.5 also RENUMBERED some themes ("0-winding-road" became "1-winding-road" when Liftoff
+  # took the lead), and an exact stem cannot see that. Fall back to the name with its leading
+  # number stripped — the same move Omarchy's own migration makes for its selection — so a pin
+  # follows its picture to the new number instead of being dropped for a renumbering.
+  if [ -z "$found" ] && [[ "$stem" == [0-9]*-* ]]; then
+    local slug="${stem#*-}" cand
+    for base in "$HOME/.config/omarchy/backgrounds/$theme" \
+                "${OMARCHY_THEMES_DIR:-/usr/share/omarchy/themes}/$theme/backgrounds"; do
+      for cand in "$base"/*-"$slug".*; do
+        if [ -f "$cand" ]; then found="$cand"; break 2; fi
+      done
+    done
+  fi
   if [ -n "$found" ]; then
     [ "$found" = "$target" ] && return 0
     rm -f "$pin"

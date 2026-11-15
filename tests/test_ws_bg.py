@@ -255,6 +255,16 @@ class Omarchy45Repair(unittest.TestCase):
         self.run_engine(3)
         self.assertEqual(os.readlink(self.pins / "ws3.png"), str(self.own_bg / "3-c.png"))
 
+    def test_a_pin_follows_its_image_across_a_renumbering(self):
+        """Omarchy 4.5 renumbered some themes' images (0-winding-road became 1-winding-road);
+        a pin to the old number follows the picture to its new number, as Omarchy's own
+        migration does for its selection."""
+        (self.shipped / "3-swirl-buck.webp").write_bytes(b"")
+        (self.pins / "ws2.jpg").symlink_to(self.theme_bg / "2-swirl-buck.jpg")
+        self.run_engine(2)
+        self.assertEqual(os.readlink(self.pins / "ws2.webp"), str(self.shipped / "3-swirl-buck.webp"))
+        self.assertFalse((self.wsbg / "repair-log").exists())
+
     def test_a_pin_found_only_in_the_generated_dir_is_not_pinned_into_it(self):
         (self.theme_bg / "4-d.webp").write_bytes(b"")   # generated holds it; shipped and user do not
         (self.pins / "ws4.jpg").symlink_to(self.theme_bg / "4-d.webp")
