@@ -770,19 +770,31 @@ class Reseat(unittest.TestCase):
     def record_at(self, path):
         pathlib.Path(path).write_text(json.dumps(self.record))
 
-    def run_reseat(self, klass, ws=4, active=4, enabled=True, arrange=True):
-        dispatched = []
-        opened = []
+    def run_reseat(self, klass, ws=4, active=4, enabled=True, focus_holds=True):
+        dispatched, opened = [], []
+        focused = {"address": ""}
         path = str(self.snap / f"ws{ws}.json")
         self.record_at(path)
+
+        def fake_sh(command):
+            if "activewindow" in command:
+                return json.dumps({"address": focused["address"]})
+            return ""
+
+        def fake_dispatch(command):
+            dispatched.append(command)
+            if command.startswith("hl.dsp.focus"):
+                focused["address"] = command.split("address:")[1].rstrip(' })\"\'')
+
         with mock.patch.object(engine, "SNAP_DIR", self.tmp.name), \
              mock.patch.object(engine.features, "enabled",
                                side_effect=lambda key: enabled and key != "layout_messages"), \
              mock.patch.object(engine, "active_ws", return_value=active), \
              mock.patch.object(engine, "tiled_on",
                                side_effect=lambda desk: list(self.windows) if desk == ws else []), \
-             mock.patch.object(engine, "dispatch",
-                               side_effect=lambda cmd: dispatched.append(cmd)), \
+             mock.patch.object(engine, "dispatch", side_effect=fake_dispatch), \
+             mock.patch.object(engine, "sh", side_effect=fake_sh) if focus_holds else \
+             mock.patch.object(engine, "sh", side_effect=lambda c: '{"address": "0xelsewhere"}'), \
              mock.patch.object(engine, "wait_until", return_value=True), \
              mock.patch.object(engine, "default_split_ratio", return_value=2), \
              mock.patch.object(engine, "set_default_split_ratio"), \
@@ -832,9 +844,26 @@ class Reseat(unittest.TestCase):
         self.assertEqual(dispatched, [])
 
     def test_an_already_arranged_desk_touches_nothing(self):
-        result, dispatched, opened = self.run_reseat("omamail", arrange=True)
+        result, dispatched, opened = self.run_reseat("omamail")
         self.assertEqual(result, 0)
         self.assertEqual(dispatched, [])
+
+    def test_a_focus_that_never_lands_degrades_to_no_preselect(self):
+        # @todo's finding (hobnob #14463): focus answers ok while the active window never
+        # changes. The walk must not anchor a split on a window that was never focused — it
+        # tiles the window anyway, without the preselect.
+        self.windows[0]["at"] = [200, 0]
+        result, dispatched, opened = self.run_reseat("omamail", focus_holds=False)
+        self.assertEqual(result, 0)
+        self.assertEqual(opened, [])
+        self.assertFalse([c for c in dispatched if "preselect" in c])
+        self.assertTrue([c for c in dispatched if "float" in c and "disable" in c])
+
+    def test_a_focus_that_lands_preselects_the_recorded_side(self):
+        self.windows[0]["at"] = [200, 0]
+        result, dispatched, opened = self.run_reseat("omamail", focus_holds=True)
+        self.assertEqual(result, 0)
+        self.assertTrue([c for c in dispatched if "preselect r" in c])
 
 
 if __name__ == "__main__":

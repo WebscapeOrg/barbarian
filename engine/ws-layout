@@ -2094,6 +2094,18 @@ def _leaf_nodes(node):
     return [node] if node[0] == "leaf" else _leaf_nodes(node[1]) + _leaf_nodes(node[2])
 
 
+def focus_window(address):
+    """Focus by address, and TRUST ONLY A READ-BACK (2026-11-16, @todo's finding: the dispatch
+    answered ok while the active window never changed). One retry; if the compositor still has
+    not moved focus, the caller degrades — no preselect, the window tiles wherever dwindle has
+    room — rather than anchoring a split on a window that was never focused."""
+    for _ in range(2):
+        dispatch(f'hl.dsp.focus({{ window = "address:{address}" }})')
+        if json.loads(sh("hyprctl activewindow -j") or "{}").get("address") == address:
+            return True
+    return False
+
+
 def reseat(ws, klass):
     """A reopened window returns to its recorded place (Dave, 2026-11-14, C-139; the machine's
     window-open listener calls this with the desk and the class). The arrange-only half of a
@@ -2152,10 +2164,9 @@ def reseat(ws, klass):
             c = assigned.get(i)
             if c is None:
                 continue
-            if s["after"] is not None and s["after"] in addr:
+            if s["after"] is not None and s["after"] in addr and focus_window(addr[s["after"]]):
                 share = s.get("share")
                 set_default_split_ratio(2 * share if share is not None else usual_ratio)
-                dispatch(f'hl.dsp.focus({{ window = "address:{addr[s["after"]]}" }})')
                 dispatch(f'hl.dsp.layout("preselect {s["side"]}")')
             dispatch(f'hl.dsp.window.float({{ action = "disable", window = "address:{c["address"]}" }})')
             wait_until(lambda: is_tiled(c["address"], ws), 2.0)
