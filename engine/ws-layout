@@ -16,6 +16,10 @@ record which windows a workspace holds and how they are arranged, and put it bac
     ws-layout fill <token> <launch> <match> <name>
                               open an app in a placeholder's place (the placeholder's buttons)
     ws-layout forget <token>  take a placeholder's window out of its desk's recording, and close it
+    ws-layout reseat <ws> <class>
+                              a reopened window returns to its recorded place on that desk —
+                              the arrange-only half of a restore (the machine's window-open
+                              listener calls this); nothing is opened or closed
     ws-layout features [name true|false]
                               read or change the independent Reptile feature switches
     ws-layout restore --automatic [ws]
