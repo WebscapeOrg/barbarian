@@ -770,9 +770,10 @@ class Reseat(unittest.TestCase):
     def record_at(self, path):
         pathlib.Path(path).write_text(json.dumps(self.record))
 
-    def run_reseat(self, klass, ws=4, active=4, enabled=True, focus_holds=True):
+    def run_reseat(self, klass, ws=4, active=4, enabled=True, focus_holds=True, initial_focus="",
+                   floaters=None, size_gaps=False):
         dispatched, opened = [], []
-        focused = {"address": ""}
+        focused = {"address": initial_focus}
         path = str(self.snap / f"ws{ws}.json")
         self.record_at(path)
 
@@ -792,6 +793,14 @@ class Reseat(unittest.TestCase):
              mock.patch.object(engine, "active_ws", return_value=active), \
              mock.patch.object(engine, "tiled_on",
                                side_effect=lambda desk: list(self.windows) if desk == ws else []), \
+             mock.patch.object(engine, "floating_on",
+                               return_value=list(floaters or [])), \
+             mock.patch.object(engine, "on_ws",
+                               side_effect=lambda desk: list(self.windows) if desk == ws else []), \
+             mock.patch.object(engine, "size_gaps",
+                               side_effect=lambda live, steps, assigned: size_gaps), \
+             mock.patch.object(engine, "nudge_sizes",
+                               side_effect=lambda ws_, steps_, assigned_: dispatched.append("nudge")), \
              mock.patch.object(engine, "dispatch", side_effect=fake_dispatch), \
              mock.patch.object(engine, "sh", side_effect=fake_sh) if focus_holds else \
              mock.patch.object(engine, "sh", side_effect=lambda c: '{"address": "0xelsewhere"}'), \
@@ -858,6 +867,47 @@ class Reseat(unittest.TestCase):
         self.assertEqual(opened, [])
         self.assertFalse([c for c in dispatched if "preselect" in c])
         self.assertTrue([c for c in dispatched if "float" in c and "disable" in c])
+
+    def test_the_dying_twin_loses_its_seat_to_the_focused_newcomer(self):
+        """An update maps the new window before the old one quits; the seat goes to the
+        newcomer (the focused twin), not the corpse still standing in its recorded spot."""
+        old_mail = dict(self.windows[0], address="0xold")
+        new_mail = dict(self.windows[0], address="0x9", at=[1900, 0])
+        self.windows = [old_mail, new_mail, self.windows[1], self.windows[2]]
+        result, dispatched, opened = self.run_reseat("omamail", initial_focus="0x9")
+        self.assertEqual(result, 0)
+        unfloats = [c for c in dispatched if "float" in c and "disable" in c]
+        self.assertIn("0x9", unfloats[0])
+        self.assertNotIn("0xold", unfloats[0])
+
+    def test_a_reopened_floating_window_is_seated_too(self):
+        """A window that maps floating first (a splash, a handoff) is still the recorded
+        window: it joins the seating and the walk unfloats it into its step."""
+        floater = dict(self.windows[0], address="0x9", floating=True)
+        self.windows = [self.windows[1], self.windows[2]]
+        result, dispatched, opened = self.run_reseat("omamail", floaters=[floater])
+        self.assertEqual(result, 0)
+        unfloats = [c for c in dispatched if "float" in c and "disable" in c]
+        self.assertTrue(any("0x9" in c for c in unfloats))
+
+    def test_the_keyboard_focus_is_given_back_after_the_walk(self):
+        # Calendar (0x3) is never a preselect anchor, so only give_focus_back() can end
+        # with focus on it — an assertion the walk's own last focus cannot satisfy.
+        self.windows[0]["at"] = [200, 0]
+        result, dispatched, _ = self.run_reseat("omamail", initial_focus="0x3")
+        self.assertEqual(result, 0)
+        focuses = [c for c in dispatched if c.startswith("hl.dsp.focus")]
+        self.assertTrue(focuses)
+        self.assertIn("0x3", focuses[-1])
+
+    def test_an_arranged_desk_with_drifted_splits_only_nudges_and_refocuses(self):
+        result, dispatched, opened = self.run_reseat("omamail", size_gaps=True,
+                                                     initial_focus="0x3")
+        self.assertEqual(result, 0)
+        self.assertEqual(opened, [])
+        self.assertIn("nudge", dispatched)
+        self.assertFalse([c for c in dispatched if "float" in c and "enable" in c])
+        self.assertIn("0x3", dispatched[-1])
 
     def test_a_focus_that_lands_preselects_the_recorded_side(self):
         self.windows[0]["at"] = [200, 0]

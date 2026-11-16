@@ -1274,12 +1274,13 @@ def rebuild(ws, steps, assigned):
     try:
         for i, s in enumerate(steps):
             klass = s["win"]["class"]
-            if s["after"] is not None and s["after"] in addr:
+            if s["after"] is not None and s["after"] in addr and focus_window(addr[s["after"]]):
                 # The size is decided BEFORE the window exists: dwindle creates the split with
                 # this ratio, so the window appears at its recorded share and never moves.
+                # focus_window (2026-11-16, @todo's finding) reads focus back and skips the
+                # preselect when the compositor answered ok without moving it.
                 share = s.get("share")
                 set_default_split_ratio(2 * share if share is not None else usual_ratio)
-                dispatch(f'hl.dsp.focus({{ window = "address:{addr[s["after"]]}" }})')
                 dispatch(f'hl.dsp.layout("preselect {s["side"]}")')
             c = assigned.get(i)
             if c:
@@ -2125,31 +2126,70 @@ def reseat(ws, klass):
     steps = steps_of(record)
     if not steps:
         return 0
-    if klass not in {app_identity(s["win"]) for s in steps} | {s["win"]["class"] for s in steps}:
+    recorded = {app_identity(s["win"]) for s in steps} | {s["win"]["class"] for s in steps}
+    # A standalone app may be recorded under its app identity while the shell reports the
+    # other era's window class on the reopen (an update is exactly when builds mix), so both
+    # directions of the era bridge count as recorded here.
+    for standalone_class, app in STANDALONE_SUMMONS_CLASSES.items():
+        if app in recorded:
+            recorded.add(standalone_class)
+    if klass not in recorded:
         return 0
     if str(ws) != str(active_ws()):
         return 0
+
+    live = without_links(tiled_on(ws))
+    # A window that reopens FLOATING is still the recorded window: it joins the seating, and
+    # the walk's unfloat puts it in its step. Until 2026-11-16 it was invisible here — a
+    # floating first map (a splash, a handoff) silently skipped the feature.
+    live += [c for c in without_links(floating_on(ws))
+             if app_identity(c) in recorded or c.get("class") in recorded]
+    if not live:
+        return 0
+    # A restart's close-and-open can leave the dying old window and the newcomer mapped
+    # together for a moment. The old twin already sits in its recorded spot and is about to
+    # close; the SEAT goes to the window that does not (close_extras keeps the newest of a
+    # class, the same preference) — otherwise the walk seats the corpse and the survivor is
+    # left at the end when it collapses.
+    seen = {}
+    focused_address = json.loads(sh("hyprctl activewindow -j") or "{}").get("address")
+    for c in live:
+        key = app_identity(c)
+        if key not in seen:
+            seen[key] = c
+            continue
+        keep, drop = seen[key], c
+        if drop.get("address") == focused_address:
+            keep, drop = drop, keep
+        live[live.index(drop)] = None
+    live = [c for c in live if c is not None]
+
     # A restart is a close and an open in quick succession; an arrange that ran within the
-    # last second has already covered this one.
+    # last second has already covered this one. The stamp is taken only once there is work,
+    # so a no-op pass never spends the debounce.
     stamp = os.path.join(SNAP_DIR, f".reseat-{ws}")
     try:
         if time.time() - os.path.getmtime(stamp) < 1.0:
             return 0
     except OSError:
         pass
+
+    assigned = assign(steps, live)
+    if not assigned:
+        return 0
+    # The arranged-check reads the TILED tree only: a floating reopen is not part of it until
+    # the walk seats it, and by_position of a floating window is not a desk shape.
+    tiled_live = [c for c in live if not c.get("floating")]
+    if len(assigned) == len(steps) and same_arrangement(tiled_live, steps, assigned):
+        if size_gaps(tiled_live, steps, assigned):
+            nudge_sizes(ws, steps, assigned)
+            if focused_address and any(c["address"] == focused_address for c in on_ws(ws)):
+                dispatch(f'hl.dsp.focus({{ window = "address:{focused_address}" }})')
+        return 0
     try:
         open(stamp, "w").close()
     except OSError:
         pass
-
-    live = without_links(tiled_on(ws))
-    assigned = assign(steps, live)
-    if not assigned:
-        return 0
-    if len(assigned) == len(steps) and same_arrangement(live, steps, assigned):
-        if size_gaps(live, steps, assigned):
-            nudge_sizes(ws, steps, assigned)
-        return 0
 
     # The float-and-retile walk of rebuild(), for the PRESENT windows only: a step whose
     # window is missing is stepped over, never opened, never given a placeholder.
@@ -2159,6 +2199,11 @@ def reseat(ws, klass):
     if present:
         wait_until(lambda: not tiled_on(ws), 2.0)
     addr, usual_ratio = {}, default_split_ratio()
+
+    def give_focus_back():
+        if focused_address and any(c["address"] == focused_address for c in on_ws(ws)):
+            dispatch(f'hl.dsp.focus({{ window = "address:{focused_address}" }})')
+
     try:
         for i, s in enumerate(steps):
             c = assigned.get(i)
@@ -2175,8 +2220,15 @@ def reseat(ws, klass):
         for c in present:
             if c["address"] not in addr.values():
                 dispatch(f'hl.dsp.window.float({{ action = "disable", window = "address:{c["address"]}" }})')
+    except BaseException:
+        # An automatic pass must never leave the desk exploded: whatever is still floating
+        # goes back into the tree, best-effort, before the error surfaces.
+        for c in on_ws(ws):
+            dispatch(f'hl.dsp.window.float({{ action = "disable", window = "address:{c["address"]}" }})')
+        raise
     finally:
         set_default_split_ratio(usual_ratio)
+    give_focus_back()
     return 0
 
 
@@ -2198,8 +2250,15 @@ def main():
         return fill(*sys.argv[2:6])
     if sys.argv[1] == "forget" and len(sys.argv) == 3:
         return forget(sys.argv[2])
-    if sys.argv[1] == "reseat" and len(sys.argv) == 4:
-        return reseat(int(sys.argv[2]), sys.argv[3])
+    if sys.argv[1] == "reseat":
+        if len(sys.argv) != 4:
+            print(__doc__)
+            return 2
+        try:
+            return reseat(int(sys.argv[2]), sys.argv[3])
+        except ValueError:
+            print(__doc__)
+            return 2
     if sys.argv[1] in ("fill", "forget"):
         print(__doc__)
         return 2
