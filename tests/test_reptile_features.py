@@ -345,7 +345,7 @@ hl = {
         archived = list((self.directory / '.local/share/Trash/files').glob('barbarian-switch-*/reptile-hide-on-close.json'))
         self.assertEqual(len(archived), 1)
         self.assertEqual(archived[0].read_text(), original)
-        self.assertEqual(len(list(directory.glob('*.json'))), 10)
+        self.assertEqual(len(list(directory.glob('*.json'))), 11)
         unowned = json.dumps({'id': 'reptile-hide-on-close', 'owner': '@someone-else'})
         retired.write_text(unowned)
         with self.assertRaises(features.SettingsError):
