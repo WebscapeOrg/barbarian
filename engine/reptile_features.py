@@ -31,6 +31,11 @@ FEATURES = [
     {"key": "close_extras", "label": "Close extra windows", "group": "Desk layouts",
      "requires": "restore_layouts",
      "description": "Close windows that are not in the saved layout during restore."},
+    {"key": "reseat_reopens", "label": "Reopened windows return to their place", "group": "Desk layouts",
+     "requires": "restore_layouts",
+     "description": "When an app on a saved desk reopens (a relaunch, an update), put it back "
+                    "where the desk recorded it — rearranging only, opening and closing "
+                    "nothing."},
     {"key": "floating_windows", "label": "Restore floating windows", "group": "Desk layouts",
      "requires": "restore_layouts",
      "description": "Open and position saved floating windows. Off leaves them alone."},

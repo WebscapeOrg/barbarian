@@ -2094,6 +2094,81 @@ def _leaf_nodes(node):
     return [node] if node[0] == "leaf" else _leaf_nodes(node[1]) + _leaf_nodes(node[2])
 
 
+def reseat(ws, klass):
+    """A reopened window returns to its recorded place (Dave, 2026-11-14, C-139; the machine's
+    window-open listener calls this with the desk and the class). The arrange-only half of a
+    restore: every recorded window PRESENT on the desk is re-tiled into its recorded spot.
+    Nothing is opened — a restarted app's window is missing only for a moment, and opening it
+    would duplicate it — and nothing is closed: strangers on the desk are a visit's business,
+    not this pass's. Only the ACTIVE desk is arranged, so Dave is never flashed onto another
+    one; a reopen he cannot see waits for his visit or HYPER+R like any other drift. Quiet by
+    nature: no card, no say() — a window sliding back into place is not an event.
+    """
+    if not features.enabled("restore_layouts") or not features.enabled("reseat_reopens"):
+        return 0
+    path = snap_path(ws)
+    if not os.path.exists(path):
+        return 0
+    record = read_record(path)
+    steps = steps_of(record)
+    if not steps:
+        return 0
+    if klass not in {app_identity(s["win"]) for s in steps} | {s["win"]["class"] for s in steps}:
+        return 0
+    if str(ws) != str(active_ws()):
+        return 0
+    # A restart is a close and an open in quick succession; an arrange that ran within the
+    # last second has already covered this one.
+    stamp = os.path.join(SNAP_DIR, f".reseat-{ws}")
+    try:
+        if time.time() - os.path.getmtime(stamp) < 1.0:
+            return 0
+    except OSError:
+        pass
+    try:
+        open(stamp, "w").close()
+    except OSError:
+        pass
+
+    live = without_links(tiled_on(ws))
+    assigned = assign(steps, live)
+    if not assigned:
+        return 0
+    if len(assigned) == len(steps) and same_arrangement(live, steps, assigned):
+        if size_gaps(live, steps, assigned):
+            nudge_sizes(ws, steps, assigned)
+        return 0
+
+    # The float-and-retile walk of rebuild(), for the PRESENT windows only: a step whose
+    # window is missing is stepped over, never opened, never given a placeholder.
+    present = tiled_on(ws)
+    for c in present:
+        dispatch(f'hl.dsp.window.float({{ action = "enable", window = "address:{c["address"]}" }})')
+    if present:
+        wait_until(lambda: not tiled_on(ws), 2.0)
+    addr, usual_ratio = {}, default_split_ratio()
+    try:
+        for i, s in enumerate(steps):
+            c = assigned.get(i)
+            if c is None:
+                continue
+            if s["after"] is not None and s["after"] in addr:
+                share = s.get("share")
+                set_default_split_ratio(2 * share if share is not None else usual_ratio)
+                dispatch(f'hl.dsp.focus({{ window = "address:{addr[s["after"]]}" }})')
+                dispatch(f'hl.dsp.layout("preselect {s["side"]}")')
+            dispatch(f'hl.dsp.window.float({{ action = "disable", window = "address:{c["address"]}" }})')
+            wait_until(lambda: is_tiled(c["address"], ws), 2.0)
+            addr[i] = c["address"]
+        # Strangers keep their desk, tiled back in at the end rather than left floating.
+        for c in present:
+            if c["address"] not in addr.values():
+                dispatch(f'hl.dsp.window.float({{ action = "disable", window = "address:{c["address"]}" }})')
+    finally:
+        set_default_split_ratio(usual_ratio)
+    return 0
+
+
 def main():
     global ANNOUNCE
     if len(sys.argv) >= 2 and sys.argv[1] == "features":
@@ -2105,13 +2180,15 @@ def main():
         ANNOUNCE = False
         sys.argv = [a for a in sys.argv if a != "--quiet"]
     if len(sys.argv) < 2 or sys.argv[1] not in ("snapshot", "restore", "show", "columns", "desks", "edit",
-                                                "fill", "forget"):
+                                                "fill", "forget", "reseat"):
         print(__doc__)
         return 2
     if sys.argv[1] == "fill" and len(sys.argv) == 6:
         return fill(*sys.argv[2:6])
     if sys.argv[1] == "forget" and len(sys.argv) == 3:
         return forget(sys.argv[2])
+    if sys.argv[1] == "reseat" and len(sys.argv) == 4:
+        return reseat(int(sys.argv[2]), sys.argv[3])
     if sys.argv[1] in ("fill", "forget"):
         print(__doc__)
         return 2

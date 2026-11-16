@@ -741,6 +741,102 @@ class LinkWindows(unittest.TestCase):
             model = engine.desk_model(4, "Mail", [link, stray], g)
         self.assertEqual([e["class"] for e in model["extra"]], ["obsidian"])
 
+class Reseat(unittest.TestCase):
+    """C-139: a reopened window returns to its recorded place — the arrange-only half of a
+    restore, called by the machine's window-open listener (Enterprise, hobnob #14462)."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix="barbarian-reseat-")
+        self.addCleanup(self.tmp.cleanup)
+        self.snap = pathlib.Path(self.tmp.name)
+        # Clear Cut as Dave has it: Mail | To Do | Calendar in thirds on ws4.
+        self.record = {"workspace": 4, "name": "Clear Cut", "format": 2, "floating": [],
+                       "windows": [
+                           {"class": "omamail", "title": "Magpie Mail", "launch": "magpie-mail",
+                            "after": None, "side": None, "share": None,
+                            "at": [0, 0], "size": [960, 1400]},
+                           {"class": "net.anotherdave.magpietodo", "title": "Magpie To Do",
+                            "launch": "todo", "after": 0, "side": "r", "share": 0.5,
+                            "at": [960, 0], "size": [480, 1400]},
+                           {"class": "magpie-calendar", "title": "Magpie Calendar",
+                            "launch": "calendar", "after": 1, "side": "r", "share": 0.5,
+                            "at": [1440, 0], "size": [480, 1400]}]}
+        self.windows = []
+        for i, win in enumerate(self.record["windows"]):
+            self.windows.append({"class": win["class"], "title": win["title"],
+                                 "address": f"0x{i + 1}", "at": [100 * i, 0],
+                                 "size": [400, 800], "floating": False})
+
+    def record_at(self, path):
+        pathlib.Path(path).write_text(json.dumps(self.record))
+
+    def run_reseat(self, klass, ws=4, active=4, enabled=True, arrange=True):
+        dispatched = []
+        opened = []
+        path = str(self.snap / f"ws{ws}.json")
+        self.record_at(path)
+        with mock.patch.object(engine, "SNAP_DIR", self.tmp.name), \
+             mock.patch.object(engine.features, "enabled",
+                               side_effect=lambda key: enabled and key != "layout_messages"), \
+             mock.patch.object(engine, "active_ws", return_value=active), \
+             mock.patch.object(engine, "tiled_on",
+                               side_effect=lambda desk: list(self.windows) if desk == ws else []), \
+             mock.patch.object(engine, "dispatch",
+                               side_effect=lambda cmd: dispatched.append(cmd)), \
+             mock.patch.object(engine, "wait_until", return_value=True), \
+             mock.patch.object(engine, "default_split_ratio", return_value=2), \
+             mock.patch.object(engine, "set_default_split_ratio"), \
+             mock.patch.object(engine, "is_tiled", return_value=True), \
+             mock.patch.object(engine.subprocess, "Popen",
+                               side_effect=lambda *a, **k: opened.append(a) or mock.MagicMock()):
+            result = engine.reseat(ws, klass)
+        return result, dispatched, opened
+
+    def test_a_reopened_window_is_retiled_and_nothing_is_opened_or_closed(self):
+        # Mail reopened at the right end: at=[200,0], the last of the three.
+        self.windows[0]["at"] = [200, 0]
+        result, dispatched, opened = self.run_reseat("omamail")
+        self.assertEqual(result, 0)
+        self.assertEqual(opened, [])   # nothing launched: a restart's app reappears by itself
+        self.assertFalse([c for c in dispatched if "close" in c])   # nothing closed
+        unfloats = [c for c in dispatched if 'float' in c and 'disable' in c]
+        # The recorded order: Mail first (its recorded spot), then To Do, then Calendar.
+        self.assertIn("0x1", unfloats[0])
+        self.assertTrue(any("0x2" in c for c in unfloats[1:]))
+        self.assertTrue(any("0x3" in c for c in unfloats[1:]))
+
+    def test_a_missing_recorded_window_is_stepped_over_not_opened(self):
+        # To Do is mid-restart: only Mail and Calendar are present, in the wrong order.
+        self.windows = [self.windows[0], self.windows[2]]
+        result, dispatched, opened = self.run_reseat("magpie-calendar")
+        self.assertEqual(result, 0)
+        self.assertEqual(opened, [])
+        self.assertFalse([c for c in dispatched if "close" in c])
+        unfloats = [c for c in dispatched if 'float' in c and 'disable' in c]
+        self.assertEqual(len(unfloats), 2)   # the two present windows, not a placeholder
+
+    def test_a_desk_that_is_not_active_is_left_alone(self):
+        result, dispatched, opened = self.run_reseat("omamail", active=2)
+        self.assertEqual(result, 0)
+        self.assertEqual(dispatched, [])
+        self.assertEqual(opened, [])
+
+    def test_a_class_the_desk_never_recorded_is_ignored(self):
+        result, dispatched, opened = self.run_reseat("org.gnome.Nautilus")
+        self.assertEqual(result, 0)
+        self.assertEqual(dispatched, [])
+
+    def test_the_switch_off_leaves_everything_alone(self):
+        result, dispatched, opened = self.run_reseat("omamail", enabled=False)
+        self.assertEqual(result, 0)
+        self.assertEqual(dispatched, [])
+
+    def test_an_already_arranged_desk_touches_nothing(self):
+        result, dispatched, opened = self.run_reseat("omamail", arrange=True)
+        self.assertEqual(result, 0)
+        self.assertEqual(dispatched, [])
+
+
 if __name__ == "__main__":
     sys.dont_write_bytecode = True
     unittest.main()
