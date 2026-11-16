@@ -14,7 +14,8 @@ import "." as Reordering
 // the sturdy version of "hold hyper and drag the bar" — "The word :)".
 //
 // TWO COLUMNS since 2026-09-01 (Dave: "Left column for left side and right column for
-// right side"): the left column is the bar's far-left lane, the right column its right
+// right side"), and FIVE on an Omarchy 4.5 bar whose centre is split into three sections:
+// the left column is the bar's far-left lane, the right column its right
 // lane. Rows are DRAGGED — within a column to reorder, ACROSS to change lanes (the move
 // lands when the row is dropped) — or nudged with keys: j/k walk, h/l switch column,
 // J/K carry the row, H/L throw it to the other column. The eye button (or `x`) hides a
@@ -28,6 +29,7 @@ import "." as Reordering
 //
 // ICON-ONLY MODE since 2026-09-12 (Dave: a toggle "by the tick and cross" that shows
 // "the tray icon sections as a horizontal row of icons without the name"): three rows
+// (five on a split-centre bar)
 // in the bar's own order, each placed as it sits on the bar — the left lane's tiles
 // hug the left edge, the right lane's the right edge, the strip's row (Dave, the same
 // day: "Workspaces | the main machine Webscape Personal ...") shows the desks as chips in
@@ -196,6 +198,10 @@ Panel {
   // centre + right · "2" icons left, strip centre (stock) · "3" icons left + centre,
   // strip far right. Derived from shell.json on every open and applied on close.
   property string mode: "2"
+  // Omarchy 4.5 split the bar's centre into three sections (centerBegin/center/centerEnd).
+  // On a split bar the panel carries the two flank lanes as their own columns and rows; on an
+  // older shell it is exactly the three-lane panel it always was. Derived at every load.
+  property bool split: false
   // The strip's widget id as found in the layout (main-machine.workspaces here,
   // omarchy.workspaces stock) — the apply script moves it whole between sections.
   property string wsWidgetId: ""
@@ -399,13 +405,15 @@ Panel {
   function captureStaged() {
     var merges = {}
     for (var k in deskMerges) merges[k] = deskMerges[k]
-    return { L: rowsOf(lmL), C: rowsOf(lmC), R: rowsOf(lmR), W: rowsOf(lmW), mode: mode,
+    return { L: rowsOf(lmL), CB: rowsOf(lmCB), C: rowsOf(lmC), CE: rowsOf(lmCE),
+             R: rowsOf(lmR), W: rowsOf(lmW), mode: mode,
              spacerDeletes: spacerDeletes, deskMerges: merges, uninstalls: uninstalls.slice(),
              curLane: curLane, cursor: cursor }
   }
 
   function stagedKey(state) {
-    return JSON.stringify([state.L, state.C, state.R, state.W, state.mode, state.spacerDeletes,
+    return JSON.stringify([state.L, state.CB, state.C, state.CE, state.R, state.W, state.mode,
+                            state.spacerDeletes,
                            state.deskMerges, state.uninstalls])
   }
 
@@ -414,7 +422,9 @@ Panel {
     deskDrag.reset()
     wsEditing = -1
     refill(lmL, state.L)
+    if (state.CB) refill(lmCB, state.CB)
     refill(lmC, state.C)
+    if (state.CE) refill(lmCE, state.CE)
     refill(lmR, state.R)
     refill(lmW, state.W)
     syncDeskSlots()
@@ -557,7 +567,10 @@ Panel {
   }
 
   function iconRowName(lane) {
-    return lane === "L" ? "top row" : lane === "C" ? "middle row" : "bottom row"
+    if (lane === "L") return "top row"
+    if (lane === "CB") return "second row"
+    if (lane === "CE") return "fourth row"
+    return lane === "C" ? "middle row" : "bottom row"
   }
 
   // The desk row on screen: the three slots each hold one, and the mode shows one of them.
@@ -568,7 +581,9 @@ Panel {
   function focusIconCursor() {
     if (!opened || !iconsOnly || tileMenuOpen || confirmOpen || wsEditing >= 0 || bgPicking >= 0
         || iconDrag.busy || deskDrag.busy) return
-    var row = curLane === "W" ? shownDeskRow() : curLane === "L" ? rowL : curLane === "C" ? rowC : rowR
+    var row = curLane === "W" ? shownDeskRow()
+      : curLane === "L" ? rowL : curLane === "CB" ? rowCB
+      : curLane === "C" ? rowC : curLane === "CE" ? rowCE : rowR
     var tile = row.itemAt(cursor)
     if (tile) tile.forceActiveFocus(Qt.OtherFocusReason)
   }
@@ -684,22 +699,31 @@ Panel {
   }
 
   ListModel { id: lmL }
+  ListModel { id: lmCB }
   ListModel { id: lmC }
+  ListModel { id: lmCE }
   ListModel { id: lmR }
   ListModel { id: lmW }   // the desks
 
   // "W" is the desks: the keys, the cursor and the undo history treat that row like a lane.
-  function modelFor(lane) { return lane === "W" ? lmW : lane === "L" ? lmL : lane === "C" ? lmC : lmR }
+  function modelFor(lane) {
+    return lane === "W" ? lmW : lane === "L" ? lmL : lane === "CB" ? lmCB
+      : lane === "C" ? lmC : lane === "CE" ? lmCE : lmR
+  }
 
   // The icon lanes visible in the current mode, left to right on screen.
   function laneOrder() {
-    return mode === "1" ? ["C", "R"] : mode === "2" ? ["L", "R"] : ["L", "C"]
+    if (mode === "1") return split ? ["CB", "C", "CE", "R"] : ["C", "R"]
+    if (mode === "2") return split ? ["L", "CB", "CE", "R"] : ["L", "R"]
+    return split ? ["L", "CB", "C", "CE"] : ["L", "C"]
   }
 
   // Every row (icon view) or column (list view) in screen order, the desks included — the
   // order the keys walk.
   function navOrder() {
-    return mode === "1" ? ["W", "C", "R"] : mode === "2" ? ["L", "W", "R"] : ["L", "C", "W"]
+    var lanes = laneOrder()
+    var at = mode === "1" ? 0 : mode === "2" ? (split ? 2 : 1) : lanes.length
+    return lanes.slice(0, at).concat(["W"]).concat(lanes.slice(at))
   }
 
   // Switching mode moves the strip; the icon lane that loses its column empties into
@@ -709,9 +733,9 @@ Panel {
     iconDrag.reset()
     deskDrag.reset()
     change("Move the workspaces", function() {
-      if (m === "1") drainLane(lmL, lmC)
-      else if (m === "2") drainLane(lmC, lmL)
-      else if (m === "3") drainLane(lmR, lmC)
+      if (m === "1") drainLane(lmL, split ? lmCB : lmC)
+      else if (m === "2") drainLane(lmC, split ? lmCB : lmL)
+      else if (m === "3") drainLane(lmR, split ? lmCE : lmC)
       mode = m
       if (navOrder().indexOf(curLane) < 0) { curLane = laneOrder()[0]; cursor = 0 }
     })
@@ -1144,8 +1168,11 @@ Panel {
       var rest = String(parts[1] || "").split("---WS---")
       var parked = {}
       try { parked = JSON.parse(rest[0] || "{}") } catch (e2) {}
+      split = layout.centerBegin !== undefined || layout.centerEnd !== undefined
       var secL = layout.left || [], secC = layout.center || [], secR = layout.right || []
+      var secCB = split ? (layout.centerBegin || []) : [], secCE = split ? (layout.centerEnd || []) : []
       var pkL = parked.left || [], pkC = parked.center || [], pkR = parked.right || []
+      var pkCB = split ? (parked.centerBegin || []) : [], pkCE = split ? (parked.centerEnd || []) : []
       function findWs(list) {
         for (var fi = 0; fi < list.length; fi++)
           if (/\.workspaces$/.test(String(list[fi].id || ""))) return String(list[fi].id)
@@ -1157,12 +1184,16 @@ Panel {
         return o
       }
       var inL = findWs(secL), inC = findWs(secC), inR = findWs(secR)
-      wsWidgetId = inL || inC || inR
-        || findWs(ents(pkL).concat(ents(pkC)).concat(ents(pkR)))
+      var inCB = split ? findWs(secCB) : "", inCE = split ? findWs(secCE) : ""
+      wsWidgetId = inL || inCB || inC || inCE || inR
+        || findWs(ents(pkL).concat(ents(pkCB)).concat(ents(pkC))
+                  .concat(ents(pkCE)).concat(ents(pkR)))
       // A strip parked in the sidecar (the retired "off" mode) or missing entirely is
       // treated as centre — the next apply brings it back there.
       mode = inL ? "1" : inR ? "3" : "2"
       fillLane(lmL, secL, pkL)
+      lmCB.clear(); lmCE.clear()
+      if (split) { fillLane(lmCB, secCB, pkCB); fillLane(lmCE, secCE, pkCE) }
       fillLane(lmC, secC, pkC)
       fillLane(lmR, secR, pkR)
       var tail = String(rest[1] || "").split("---ACTIVE---")
@@ -1448,7 +1479,7 @@ Panel {
   component LaneList: ListView {
     id: list
 
-    // "L", "C" or "R" — which bar section this column edits.
+    // Which bar section this column edits: "L", "CB", "C", "CE" or "R".
     property string lane: "R"
     // The other icon columns, for cross-drop coordinate math.
     property var others: []
@@ -1462,7 +1493,7 @@ Panel {
     clip: false                               // a card dragged across the gap must stay visible
     interactive: false
     spacing: 0
-    model: lane === "L" ? lmL : lane === "C" ? lmC : lmR
+    model: root.modelFor(lane)
 
     move: Transition { NumberAnimation { properties: "y"; duration: 110 } }
     moveDisplaced: Transition { NumberAnimation { properties: "y"; duration: 110 } }
@@ -1778,6 +1809,7 @@ Panel {
   function laneListsHeight() {
     var tallest = 0
     if (mode !== "1") tallest = Math.max(tallest, lviewL.height)
+    if (split) tallest = Math.max(tallest, lviewCB.height, lviewCE.height)
     if (mode !== "2") tallest = Math.max(tallest, lviewC.height)
     if (mode !== "3") tallest = Math.max(tallest, lviewR.height)
     return tallest
@@ -1837,7 +1869,7 @@ Panel {
 
     property alias align: irow.alignment
     controller: iconDrag
-    model: lane === "L" ? lmL : lane === "C" ? lmC : lmR
+    model: root.modelFor(lane)
     width: parent.width
     maximumSlotWidth: Style.space(32)
     minimumSlotWidth: Style.space(22)
@@ -2565,7 +2597,7 @@ Panel {
         anchors.fill: parent
         z: 10
         enabled: root.opened && root.iconsOnly && root.bgPicking < 0 && !root.confirmOpen
-        rows: [rowL, rowC, rowR]
+        rows: split ? [rowL, rowCB, rowC, rowCE, rowR] : [rowL, rowC, rowR]
         motionDuration: root.setting("reduce-motion", false) ? 0 : 160
         onDropped: function(fromRow, fromIndex, toRow, toIndex) {
           if (fromRow === toRow) root.moveItem(fromRow.lane, fromIndex, toIndex)
@@ -2826,7 +2858,10 @@ Panel {
           width: parent.width
           spacing: Style.space(14)
 
-          readonly property real colWidth: (width - spacing * 4 - 2) / 3
+          // Five columns and four separators share eight gaps when the centre is split;
+          // three columns and two separators share four.
+          readonly property real colWidth: root.split
+            ? (width - spacing * 8 - 4) / 5 : (width - spacing * 4 - 2) / 3
 
           // Slot one: the strip in mode 1, otherwise the bar's left icons.
           Column {
@@ -2859,7 +2894,7 @@ Panel {
             LaneList {
               id: lviewL
               lane: "L"
-              others: [lviewC, lviewR]
+              others: [lviewCB, lviewC, lviewCE, lviewR]
               visible: root.mode !== "1"
             }
 
@@ -2871,8 +2906,54 @@ Panel {
           }
 
           Rectangle {
+            visible: root.split
             width: 1
-            height: Math.max(col0.height, Math.max(col1.height, col2.height))
+            height: Math.max(col0.height, Math.max(colCB.height,
+                     Math.max(col1.height, Math.max(colCE.height, col2.height))))
+            color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.18)
+          }
+
+          // Omarchy 4.5's centre-begin section, its own column on a split bar.
+          Column {
+            id: colCB
+            visible: root.split
+            width: laneRow.colWidth
+            spacing: 0
+
+            Text {
+              width: parent.width
+              text: "CENTRE LEFT"
+              textFormat: Text.PlainText
+              horizontalAlignment: Text.AlignHCenter
+              topPadding: 0
+              bottomPadding: Style.space(8)
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+              font.bold: true
+              color: root.muted
+            }
+
+            Rectangle {
+              width: parent.width
+              height: 1
+              color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.18)
+            }
+
+            Item { width: 1; height: Style.space(4) }
+
+            LaneList {
+              id: lviewCB
+              lane: "CB"
+              others: [lviewL, lviewC, lviewCE, lviewR]
+            }
+
+            AddSpacer { lane: "CB" }
+          }
+
+          Rectangle {
+            width: 1
+            height: Math.max(col0.height, Math.max(colCB.height,
+                     Math.max(col1.height, Math.max(colCE.height, col2.height))))
             color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.18)
           }
 
@@ -2907,7 +2988,7 @@ Panel {
             LaneList {
               id: lviewC
               lane: "C"
-              others: [lviewL, lviewR]
+              others: [lviewL, lviewCB, lviewCE, lviewR]
               visible: root.mode !== "2"
             }
 
@@ -2919,8 +3000,54 @@ Panel {
           }
 
           Rectangle {
+            visible: root.split
             width: 1
-            height: Math.max(col0.height, Math.max(col1.height, col2.height))
+            height: Math.max(col0.height, Math.max(colCB.height,
+                     Math.max(col1.height, Math.max(colCE.height, col2.height))))
+            color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.18)
+          }
+
+          // Omarchy 4.5's centre-end section, its own column on a split bar.
+          Column {
+            id: colCE
+            visible: root.split
+            width: laneRow.colWidth
+            spacing: 0
+
+            Text {
+              width: parent.width
+              text: "CENTRE RIGHT"
+              textFormat: Text.PlainText
+              horizontalAlignment: Text.AlignHCenter
+              topPadding: 0
+              bottomPadding: Style.space(8)
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+              font.bold: true
+              color: root.muted
+            }
+
+            Rectangle {
+              width: parent.width
+              height: 1
+              color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.18)
+            }
+
+            Item { width: 1; height: Style.space(4) }
+
+            LaneList {
+              id: lviewCE
+              lane: "CE"
+              others: [lviewL, lviewCB, lviewC, lviewR]
+            }
+
+            AddSpacer { lane: "CE" }
+          }
+
+          Rectangle {
+            width: 1
+            height: Math.max(col0.height, Math.max(colCB.height,
+                     Math.max(col1.height, Math.max(colCE.height, col2.height))))
             color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.18)
           }
 
@@ -2955,7 +3082,7 @@ Panel {
             LaneList {
               id: lviewR
               lane: "R"
-              others: [lviewL, lviewC]
+              others: [lviewL, lviewCB, lviewC, lviewCE]
               visible: root.mode !== "3"
             }
 
@@ -3006,7 +3133,22 @@ Panel {
           Rectangle {
             width: parent.width
             height: 1
+            visible: root.split
             color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.18)
+          }
+
+          // Omarchy 4.5's centre-begin section, its own row on a split bar.
+          Item {
+            width: parent.width
+            height: root.rowSlotHeight
+            visible: root.split
+
+            IconRow {
+              id: rowCB
+              lane: "CB"
+              align: "center"
+              anchors.verticalCenter: parent.verticalCenter
+            }
           }
 
           // Slot two: the strip in mode 2 (stock), otherwise the bar's centre icons.
@@ -3033,7 +3175,22 @@ Panel {
           Rectangle {
             width: parent.width
             height: 1
+            visible: root.split
             color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.18)
+          }
+
+          // Omarchy 4.5's centre-end section, its own row on a split bar.
+          Item {
+            width: parent.width
+            height: root.rowSlotHeight
+            visible: root.split
+
+            IconRow {
+              id: rowCE
+              lane: "CE"
+              align: "center"
+              anchors.verticalCenter: parent.verticalCenter
+            }
           }
 
           // Slot three: the strip in mode 3, otherwise the bar's right icons.
