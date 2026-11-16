@@ -909,6 +909,37 @@ class Reseat(unittest.TestCase):
         self.assertFalse([c for c in dispatched if "float" in c and "enable" in c])
         self.assertIn("0x3", dispatched[-1])
 
+    def test_a_reseat_skips_while_a_restore_is_arranging(self):
+        """Enterprise's live finding (#14486): restore and reseat must not walk one desk at
+        the same time. With the arrange lock held, reseat is a no-op — never queued."""
+        import fcntl
+        self.windows[0]["at"] = [200, 0]
+        lock = open(os.path.join(self.tmp.name, ".arranging"), "a")
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        try:
+            result, dispatched, opened = self.run_reseat("omamail")
+        finally:
+            fcntl.flock(lock, fcntl.LOCK_UN)
+            lock.close()
+        self.assertEqual(result, 0)
+        self.assertEqual(dispatched, [])
+
+    def test_a_restore_holds_the_arrange_lock_while_it_runs(self):
+        observed = {}
+        original = engine._restore
+
+        def spy(ws, name, steps, floats, desk, say):
+            observed["arranging"] = engine.arranging_now()
+            return 0
+
+        record = {"workspace": 4, "name": "Clear Cut", "format": 2, "floating": [],
+                  "windows": []}
+        pathlib.Path(self.tmp.name, "ws4.json").write_text(json.dumps(record))
+        with mock.patch.object(engine, "_restore", side_effect=spy), \
+             mock.patch.object(engine, "ANNOUNCE", False):
+            self.assertEqual(engine.restore(4), 0)
+        self.assertTrue(observed.get("arranging"))
+
     def test_a_focus_that_lands_preselects_the_recorded_side(self):
         self.windows[0]["at"] = [200, 0]
         result, dispatched, opened = self.run_reseat("omamail", focus_holds=True)

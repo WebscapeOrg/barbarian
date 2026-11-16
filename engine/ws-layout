@@ -53,6 +53,8 @@ closing one left the seat running with nothing showing it. Dave retired the seve
 that day — Q-024 in the private machine repo — and the rule went with them.)
 """
 
+import contextlib
+import fcntl
 import functools
 import json
 import os
@@ -1393,7 +1395,8 @@ def restore(ws, automatic=False, on_visit=False):
     if ANNOUNCE:
         say()
     try:
-        return _restore(ws, name, steps_of(record), record.get("floating") or [], desk, say)
+        with arranging():
+            return _restore(ws, name, steps_of(record), record.get("floating") or [], desk, say)
     finally:
         if shown[0]:
             card_down()
@@ -2099,6 +2102,38 @@ def _leaf_nodes(node):
     return [node] if node[0] == "leaf" else _leaf_nodes(node[1]) + _leaf_nodes(node[2])
 
 
+@contextlib.contextmanager
+def arranging():
+    """One arranger at a time on a machine (Enterprise's live finding, hobnob #14486): a
+    restore can be minutes long — opening windows, waiting for them — and a reseat that
+    walks the same desk mid-restore floats and re-tiles under it. Every path that ARRANGES a
+    desk (restore's whole run, reseat's walk) holds this lock for its duration."""
+    fd = None
+    try:
+        fd = open(os.path.join(SNAP_DIR, ".arranging"), "a")
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        if fd is not None:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+            fd.close()
+
+
+def arranging_now():
+    """Is an arrange already running? reseat asks this and SKIPS — queueing behind a restore
+    would re-float windows the restore is still placing, and the next window open retries."""
+    try:
+        fd = open(os.path.join(SNAP_DIR, ".arranging"), "a")
+    except OSError:
+        return False
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        return True
+    fcntl.flock(fd, fcntl.LOCK_UN)
+    return False
+
+
 def focus_window(address):
     """Focus by address, and TRUST ONLY A READ-BACK (2026-11-16, @todo's finding: the dispatch
     answered ok while the active window never changed). One retry; if the compositor still has
@@ -2178,6 +2213,8 @@ def reseat(ws, klass):
     except OSError:
         pass
 
+    if arranging_now():
+        return 0
     assigned = assign(steps, live)
     if not assigned:
         return 0
@@ -2197,6 +2234,11 @@ def reseat(ws, klass):
 
     # The float-and-retile walk of rebuild(), for the PRESENT windows only: a step whose
     # window is missing is stepped over, never opened, never given a placeholder.
+    with arranging():
+        return _reseat_walk(ws, steps, assigned, focused_address)
+
+
+def _reseat_walk(ws, steps, assigned, focused_address):
     present = tiled_on(ws)
     for c in present:
         dispatch(f'hl.dsp.window.float({{ action = "enable", window = "address:{c["address"]}" }})')
