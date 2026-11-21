@@ -371,6 +371,36 @@ class Install(unittest.TestCase):
         self.assertIn("--when-unlocked", self.called("systemd-run")[0])
         self.assertIn("held back", result.stdout)
 
+    def desktop_lock_state(self, answer):
+        """Plant Enterprise's one desktop-lock check (C-200) in the fake HOME's bin."""
+        folder = self.home / ".local/bin"
+        folder.mkdir(parents=True, exist_ok=True)
+        path = folder / "desktop-lock-state"
+        path.write_text(f"#!/usr/bin/env bash\necho {answer}\n")
+        path.chmod(0o755)
+
+    def test_the_desktop_lock_check_is_the_one_authority_when_it_exists(self):
+        """Enterprise's desktop-lock-state (C-200, hobnob #16609): where it exists, its word is
+        final in both directions — locked defers even when the shell's own answer disagrees,
+        and unlocked installs even when the shell's answer says locked."""
+        self.desktop_lock_state("locked")
+        self.locked(False)          # the local logic would install; the tool overrules it
+        result = self.run_install()
+        self.assertFalse((self.home / PLUGIN).exists())
+        self.assertIn("held back", result.stdout)
+        self.desktop_lock_state("unlocked")
+        self.locked(True)           # and the other way round
+        result = self.run_install()
+        self.assertTrue((self.home / PLUGIN).exists())
+        self.assertNotIn("held back", result.stdout)
+
+    def test_an_unknown_desktop_lock_state_counts_as_locked(self):
+        self.desktop_lock_state("unknown")
+        self.locked(False)
+        result = self.run_install()
+        self.assertFalse((self.home / PLUGIN).exists())
+        self.assertIn("held back", result.stdout)
+
     def engines_out_of_date(self):
         """Everything installed, then the engines alone made older: an engine-only commit."""
         self.run_install()

@@ -93,6 +93,17 @@ fi
 
 session_locked() {
   local status
+  # ⚠️ ONE DESKTOP-LOCK CHECK, NOT TWO COPIES DRIFTING (2026-11-21, Enterprise's C-200):
+  # desktop-lock-state answers for the whole machine — locked, unlocked or unknown, exit 0
+  # only for unlocked — and loads the session's own environment before it asks. Where it
+  # exists its answer is final: anything but unlocked counts as locked here, exactly as the
+  # local logic below has always treated an answer it could not read. A machine without it
+  # (before its first ship sync) falls through to the local questions.
+  status="$("${XDG_BIN_HOME:-$HOME/.local/bin}/desktop-lock-state" 2>/dev/null)"
+  case "$status" in
+    unlocked) return 1 ;;
+    locked|unknown) return 0 ;;
+  esac
   # ⚠️ NO SHELL RUNNING MEANS NOTHING TO CRASH — and it is the case `omarchy-shell lock status`
   # cannot answer: over a plain ssh login it prints "OMARCHY_PATH is not set", which the
   # fall-through below read as a lock, so a stranger installing over ssh had every file deferred
