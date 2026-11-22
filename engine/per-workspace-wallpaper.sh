@@ -219,9 +219,8 @@ auto_image() {
 # is the bordered era, including the AARGGBB-vs-RRGGBBAA rotation trap and the Quattro
 # `hyprctl eval` form, if a per-workspace border is ever wanted back.
 
-LAST=""
 apply() {
-  local ws="$1" want
+  local ws="$1" force="${2:-}" want shown
   # ⚠️ THE v2 EVENT IS `ID,NAME` AND ONLY THE ID IS WANTED. Passed through whole, the id lands in an
   # arithmetic expression as `2,Webscape` — bash reads the comma as the sequence operator, evaluates
   # `Webscape` as a variable name, and dies on `set -u`. Strip at the first comma.
@@ -230,43 +229,35 @@ apply() {
   want="$(wallpaper_for "$ws")" || return 0
   [ -n "$want" ] || return 0
   # ⚠️ DE-DUPE OR IT REPAINTS ON EVERY SWITCH. Two workspaces can resolve to the same image (a theme
-  # with fewer backgrounds than workspaces wraps), and re-setting the same path is a visible flicker
-  # for no change.
+  # with fewer backgrounds than workspaces wraps, or two desks pinned to one picture), and `setInstant`
+  # reloads even the image already on screen, a visible flicker for no change.
+  #
+  # ⚠️ COMPARE THE IMAGES, NOT THE PATHS. Each desk's pin is its own link (ws1.webp, ws2.webp) and the
+  # theme folder is a link too, so two desks showing one picture hand over different strings: both
+  # sides are resolved before they are compared. When the picture is the same, only the link moves,
+  # so a later re-pin of the desk left behind cannot change what a shell restart or the lock screen
+  # reads for this one. One-shot `apply` passes "force": a pin or theme has just changed under the
+  # link, and the shell, which cannot be asked what it shows, must be told.
   #
   # ⚠️ COMPARE AGAINST THE SYMLINK, NOT A REMEMBERED LAST VALUE. A remembered value says what THIS
   # script last set; the link says what is actually on screen, and the two part company the moment
   # anything else writes it — `omarchy theme set`, `omarchy theme bg next`. With one image for every
   # workspace (the `all.<ext>` rule above) a remembered value would match forever, so the wallpaper
   # would stay on whatever the theme change left behind and never come back.
-  [ "$want" = "$(readlink -f "$STATE/background" 2>/dev/null)" ] && return 0
+  shown="$(readlink -f "$want" 2>/dev/null)"
+  [ -n "$shown" ] || shown="$want"
+  if [ -z "$force" ] && [ "$shown" = "$(readlink -f "$STATE/background" 2>/dev/null)" ]; then
+    [ "$(readlink "$STATE/background" 2>/dev/null)" = "$want" ] || ln -nsf "$want" "$STATE/background" 2>/dev/null
+    return 0
+  fi
 
-  # ⚠️ THE SYMLINK IS THE STATE. THE IPC CALL ALONE IS THROWN AWAY WITHIN 100ms — and that is the
-  # bug Dave hit: "it briefly shows its own wallpaper but then immediately reverts to the usual
-  # default one." Quickshell's background plugin runs
-  #     Timer { interval: 100; running: true; repeat: true; onTriggered: refreshBackground() }
-  # which re-reads ~/.local/state/omarchy/current/background ten times a second and reasserts
-  # whatever it points at. `background set` is a PREVIEW — it paints, and the very next tick
-  # overwrites it. Repointing the link first is what makes the choice stick, because then every one
-  # of those refreshes agrees with us.
-  #
-  # This is exactly what upstream's own `omarchy-theme-bg-set` does (ln -nsf, then the IPC call);
-  # inlined rather than shelled out so the transition METHOD stays ours to choose.
-  #
-  # ⚠️ TELL THE SHELL BEFORE MOVING THE LINK, NOT AFTER — THE ORDER IS THE WHOLE ANIMATION FIX.
-  # Dave, 2026-08-11: "any way to remove the wallpaper change animation when moving from one ws to
-  # another?" There is, and it was never a setting. That same 100ms poll reads the link and calls
-  # `setBackground(path, false)` — the `false` is "not instant", so it runs a 420ms diagonal wipe.
-  # Moving the link first hands the poll a change it has not been told about, and it wipes. Worse,
-  # our own instant call then does nothing at all: `transitionBackground` returns early when the
-  # path it is given is already the current one, so the wipe the poll started just carries on.
-  # Telling the shell first means the poll finds nothing new, so there is nothing to animate. The
-  # 24ms it takes to reach the shell used to be the window the poll could win; now it is the window
-  # in which the link still reads old, which is a few microseconds.
-  omarchy-shell -q background "$METHOD" "$want" >/dev/null 2>&1
+  # ⚠️ TELL THE SHELL, AND MOVE THE LINK. Omarchy 4.5's shell reads the link only when it starts, after
+  # its own picker and on `background refresh`, so the IPC call is what changes the screen and the link
+  # is what a shell restart, the lock screen and `omarchy-theme-bg-set` read back. One instant call per
+  # change: each one reloads the image, so the second "repair" call this script made for the 100ms poll
+  # of earlier shells (gone in 4.5) only showed the same picture loading twice.
+  omarchy-shell -q background "$METHOD" "$shown" >/dev/null 2>&1
   ln -nsf "$want" "$STATE/background" 2>/dev/null || return 0
-  # Repair, for the rare poll that read the old link in those microseconds and started a wipe back
-  # to it. It is a no-op in the normal case, because by now the shell already holds this path.
-  omarchy-shell -q background "$METHOD" "$want" >/dev/null 2>&1
 }
 
 # One-shot mode: `per-workspace-wallpaper.sh apply [N]` resolves one desk's image NOW and
@@ -275,7 +266,7 @@ apply() {
 # rules, same code — the resolution logic lives only here.
 if [ "${1:-}" = "apply" ]; then
   repair_pins
-  apply "${2:-$(hyprctl activeworkspace -j 2>/dev/null | grep -oP '"id":\s*\K[0-9]+' | head -1)}"
+  apply "${2:-$(hyprctl activeworkspace -j 2>/dev/null | grep -oP '"id":\s*\K[0-9]+' | head -1)}" force
   exit 0
 fi
 
@@ -285,7 +276,7 @@ repair_pins
 
 # Paint the workspace we start on, so the wallpaper is right before the first switch rather than
 # after it.
-apply "$(hyprctl activeworkspace -j 2>/dev/null | grep -oP '"id":\s*\K[0-9]+' | head -1)"
+apply "$(hyprctl activeworkspace -j 2>/dev/null | grep -oP '"id":\s*\K[0-9]+' | head -1)" force
 
 # ⚠️ socket2, NOT a poll. It is the event stream Hyprland already emits; polling `activeworkspace`
 # would be a wake-up every second for something that changes a few times an hour.

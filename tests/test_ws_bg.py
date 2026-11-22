@@ -92,6 +92,52 @@ class Backgrounds(unittest.TestCase):
         self.run_script(self.wsbg / ENGINE.name, "apply", desk)
         return os.readlink(background).rsplit("/", 1)[-1] if background.is_symlink() else None
 
+    def watch(self, on_screen, *desks):
+        """Run the engine's watcher from desk `on_screen` through switches to `desks`; return its shell calls."""
+        events = self.tmp / "events"
+        events.write_text("".join(f"workspacev2>>{desk},Desk{desk}\n" for desk in desks))
+        self.stub("socat", f'cat "{events}"')
+        self.stub("hyprctl", f'echo \'{{"id": {on_screen}, "name": "{on_screen}"}}\'')
+        environment = dict(self.env(), HYPRLAND_INSTANCE_SIGNATURE="test")
+        result = subprocess.run([str(self.wsbg / ENGINE.name)], capture_output=True, text=True,
+                                env=environment, timeout=60)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        return [line.split()[-1] for line in self.calls.read_text().splitlines()
+                if line.startswith("omarchy-shell") and " background " in line]
+
+    def test_desks_pinned_to_one_picture_switch_without_repainting(self):
+        self.pin(1, self.theme_bg / "2-b.jpg")
+        self.pin(2, self.theme_bg / "2-b.jpg")
+        painted = self.watch(1, 2, 1, 2)
+        real = str((self.pins / "ws2.jpg").resolve())
+        self.assertEqual(real, str((self.pins / "ws1.jpg").resolve()))
+        self.assertEqual(painted, [real], "only the first paint, on start")
+        self.assertEqual(os.readlink(self.state / "background"), str(self.pins / "ws2.jpg"))
+
+    def test_a_switch_to_another_picture_paints_it_by_its_real_path(self):
+        self.pin(1, self.theme_bg / "1-a.jpg")
+        self.pin(2, self.theme_bg / "2-b.jpg")
+        painted = self.watch(1, 2)
+        first, second = str((self.pins / "ws1.jpg").resolve()), str((self.pins / "ws2.jpg").resolve())
+        self.assertEqual(painted, [first, second], "one instant call per change")
+        self.assertEqual(os.readlink(self.state / "background"), str(self.pins / "ws2.jpg"))
+
+    def test_a_desk_left_behind_can_be_re_pinned_without_changing_the_one_on_screen(self):
+        self.pin(1, self.theme_bg / "2-b.jpg")
+        self.pin(2, self.theme_bg / "2-b.jpg")
+        self.watch(1, 2)
+        showing = (self.pins / "ws2.jpg").resolve()
+        (self.pins / "ws1.jpg").unlink()
+        self.pin(1, self.theme_bg / "3-c.jpg")
+        self.assertEqual((self.state / "background").resolve(), showing)
+
+    def test_one_shot_apply_tells_the_shell_even_when_the_picture_already_shows(self):
+        self.pin(9, self.theme_bg / "2-b.jpg")
+        (self.state / "background").symlink_to(self.pins / "ws9.jpg")
+        self.run_script(self.wsbg / ENGINE.name, "apply", 9)
+        painted = [line for line in self.calls.read_text().splitlines() if " background " in line]
+        self.assertEqual(len(painted), 1, painted)
+
     def test_the_stubs_stand_in_for_the_real_shell(self):
         found = subprocess.run(["bash", "-c", "command -v omarchy-shell hyprctl"],
                                capture_output=True, text=True, env=self.env()).stdout.split()
