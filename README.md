@@ -143,9 +143,8 @@ Other private web apps can be described in `local-launchers.json` beside it: eac
 window class to its `launch` command and panel `label`. Those machine-local entries join the add
 picker without putting private addresses in git.
 
-Open **HYPER+L → Features**, or use the **Reptile** switches in Caboodle, to turn behaviors
-on and off independently. Both controls share the same settings. Changes are saved immediately;
-no shell restart is needed. Saved recordings and quick-app choices are retained.
+Open **HYPER+L → Features** to turn behaviors on and off independently. Changes are saved
+immediately; no shell restart is needed. Saved recordings and quick-app choices are retained.
 
 The switches cover layout restoration, restoration at login and during automatic recovery,
 applying new edits when visiting a desk, reopening missing apps, closing extra windows,
@@ -167,7 +166,8 @@ Feature settings live in `~/.config/omarchy/workspace-layout/features.json`. A m
 the existing behavior. Automatic
 callers use `ws-layout restore --automatic --quiet <desk>`; the panel uses `--on-visit` for new
 edits. `ws-layout features` reads the values, and `ws-layout features <name> true|false` changes
-one. The `reptile-feature status|on|off <name>` adapter supplies Caboodle's switch contract.
+one. These settings are not offered as Caboodle switches: they matter only at the desk, where the
+panel already has them, and the installer removes the switches it used to install.
 
 ## What's inside
 

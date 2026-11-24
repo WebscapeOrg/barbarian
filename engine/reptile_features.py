@@ -182,47 +182,6 @@ def set_feature(key, value):
         return read()
 
 
-def status(key):
-    feature = next((item for item in FEATURES if item["key"] == key), None)
-    if feature is None:
-        raise SettingsError("Choose a known Reptile feature.")
-    values = read()
-    summary = feature["description"]
-    requirement = feature.get("requires")
-    if requirement and not values[requirement]:
-        parent = next(item["label"] for item in FEATURES if item["key"] == requirement)
-        summary += f" Paused while {parent} is off."
-    return {"id": "reptile-" + key.replace("_", "-"), "on": values[key], "summary": summary}
-
-
-def install_manifests(directory):
-    directory = Path(directory)
-    directory.mkdir(parents=True, exist_ok=True)
-    for feature in FEATURES:
-        key = feature["key"]
-        identifier = "reptile-" + key.replace("_", "-")
-        manifest = {"id": identifier, "title": feature["label"], "group": "Reptile",
-                    "description": feature["description"], "owner": "@barbarian",
-                    "docs": "https://github.com/WebscapeOrg/barbarian#reptile-features",
-                    "status": ["reptile-feature", "status", key],
-                    "on": ["reptile-feature", "on", key], "off": ["reptile-feature", "off", key]}
-        body = json.dumps(manifest, indent=2) + "\n"
-        path = directory / (identifier + ".json")
-        if path.exists() and path.read_text() == body:
-            continue
-        atomic_write(path, body)
-    retired = directory / "reptile-hide-on-close.json"
-    if not retired.exists():
-        return
-    manifest = read_object(retired)
-    if manifest.get("owner") != "@barbarian" or manifest.get("id") != "reptile-hide-on-close":
-        raise SettingsError("The old global Quick apps switch belongs to another owner; it was kept.")
-    trash = Path.home() / ".local/share/Trash/files"
-    trash.mkdir(parents=True, exist_ok=True)
-    destination = Path(tempfile.mkdtemp(prefix="barbarian-switch-", dir=trash)) / retired.name
-    os.replace(retired, destination)
-
-
 def command(arguments):
     try:
         if arguments:

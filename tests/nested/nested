@@ -118,7 +118,7 @@ case "${1:-}" in
     ;;
   engine)
     nested_env; shift
-    case "${1:-}" in ws-layout|quick-app|reptile-feature) ;; *) exit 2 ;; esac
+    case "${1:-}" in ws-layout|quick-app) ;; *) exit 2 ;; esac
     tool="$1"; shift
     HOME="$TEST_HOME" exec "$HERE/../../engine/$tool" "$@"
     ;;

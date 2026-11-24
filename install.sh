@@ -304,12 +304,19 @@ finally:
     os.unlink(cache.name)
 PY
 }
-for engine in ws-layout quick-app reptile_features.py reptile-feature; do
+for engine in ws-layout quick-app reptile_features.py; do
   if ! compiles "$HERE/engine/$engine"; then
     echo "barbarian: engine/$engine does not compile — nothing installed"
     exit 1
   fi
 done
+
+retired_switches_left=""
+for manifest in "$HOME"/.config/caboodle/switches/reptile-*.json; do
+  [ -f "$manifest" ] && grep -q '"owner": "@barbarian"' "$manifest" || continue
+  rm -f -- "$manifest" || retired_switches_left="$retired_switches_left  $manifest"$'\n'
+done
+rm -f -- "$HOME/.local/bin/reptile-feature" || retired_switches_left="$retired_switches_left  $HOME/.local/bin/reptile-feature"$'\n'
 
 DEFERRED=0
 WRITE_FAILED=""
@@ -321,7 +328,7 @@ install_plugin_file() { # <mode> <repo file> <live file>
   cmp -s "$src" "$dest" && return 0        # identical — no write, no reload
   # ⚠️ ONLY WHAT THE SHELL LOADS WAITS FOR A FREE SCREEN (2026-11-03). A file under plugins/
   # reloads the shell, and the wallpaper watcher is restarted after its write, so those two wait.
-  # The layout engines and the switches' command line are read afresh on every call: nothing
+  # The layout engines are read afresh on every call: nothing
   # reloads, so they go in under a lock, as the main machine's own installer already puts them in
   # (omarchy/installs.env). Holding them back left the main machine, locked overnight, on an older
   # ws-layout than its ships. Two limits: they still wait out a desk renumber, and they wait
@@ -361,7 +368,6 @@ install_plugin_file() { # <mode> <repo file> <live file>
 # file it names leaves the shell with an overlay that fails to load.
 FILES=(
   "m644|$HERE/engine/reptile_features.py|$LAYOUT_DST/reptile_features.py"
-  "m755|$HERE/engine/reptile-feature|$HOME/.local/bin/reptile-feature"
   "m644|$HERE/plugin/ReorderController.qml|$PLUGIN_DIR/ReorderController.qml"
   "m644|$HERE/plugin/ReorderRow.qml|$PLUGIN_DIR/ReorderRow.qml"
   "m644|$HERE/plugin/Panel.qml|$PLUGIN_DIR/Panel.qml"
@@ -428,14 +434,6 @@ for f in "${FILES[@]}"; do
   rest="${f#*|}"; src="${rest%%|*}"; dest="${f##*|}"
   install_plugin_file "${f%%|*}" "$src" "$dest"
 done
-
-SWITCHES_FAILED=0
-# The switch manifests describe the installed engine, so they follow it: in when it is in, held
-# back while it is (a manifest naming a feature the engine no longer knows breaks its switch).
-if cmp -s "$HERE/engine/reptile-feature" "$HOME/.local/bin/reptile-feature" &&
-   cmp -s "$HERE/engine/reptile_features.py" "$LAYOUT_DST/reptile_features.py"; then
-  python3 "$HERE/engine/reptile-feature" install-manifests "$HOME/.config/caboodle/switches" || SWITCHES_FAILED=1
-fi
 
 # The engine is normally started by a user service or a theme-set hook on the host
 # machine; it is safe to install everywhere and started where the wiring exists.
@@ -742,8 +740,8 @@ if [ -n "$WRITE_FAILED" ]; then
   printf 'barbarian: could not write these files, so they were left as they were:\n%sFix the reported path and run the installer again.\n' "$WRITE_FAILED" >&2
   exit 1
 fi
-if [ "$SWITCHES_FAILED" = 1 ]; then
-  echo "barbarian: Caboodle switches could not be installed; the native Features tab is available. Fix the reported path and run the installer again." >&2
+if [ -n "$retired_switches_left" ]; then
+  printf 'barbarian: could not remove these retired Caboodle switches:\n%sFix the reported path and run the installer again.\n' "$retired_switches_left" >&2
   exit 1
 fi
 if [ "$REPAIR_FAILED" = 1 ]; then

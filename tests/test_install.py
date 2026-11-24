@@ -405,8 +405,7 @@ class Install(unittest.TestCase):
         """Everything installed, then the engines alone made older: an engine-only commit."""
         self.run_install()
         layout = self.home / ".config/omarchy/workspace-layout"
-        engines = [layout / "ws-layout", layout / "quick-app", layout / "reptile_features.py",
-                   self.home / ".local/bin/reptile-feature"]
+        engines = [layout / "ws-layout", layout / "quick-app", layout / "reptile_features.py"]
         for engine in engines:
             engine.write_text("# an older engine\n")
         self.calls.write_text("")
@@ -444,55 +443,23 @@ class Install(unittest.TestCase):
         self.assertEqual(engines[0].read_text(), "# an older engine\n")
         self.assertTrue(self.called("systemd-run"), result.stdout)
 
-    def test_the_switch_manifests_follow_the_installed_engine(self):
-        """Held back with the engine, so no switch names a feature the engine does not know."""
-        self.engines_out_of_date()
-        switches = self.home / ".config/caboodle/switches"
-        before = sorted(p.name for p in switches.glob("*")) if switches.exists() else []
-        for manifest in switches.glob("*"):
-            manifest.unlink()
-        self.stub("pgrep", 'case "$*" in *quickshell*)'
-                           ' [ -f "$SHELL_ALIVE" ] && echo 1234 || exit 1 ;;'
-                           ' *"-x Hyprland"*) echo 4321 ;;'
-                           ' *ws-renumber*) echo 777 ;;'
-                           ' *) exit 1 ;; esac')
-        self.run_install()
-        self.assertEqual(sorted(p.name for p in switches.glob("*")), [])
-        self.assertTrue(before, "the first install wrote no switch manifests to compare")
-
-    def test_the_switch_manifests_go_in_with_the_engines_while_the_watcher_waits(self):
-        """The watcher is held back under a lock, the engines are not, so the manifests follow them."""
-        self.engines_out_of_date()
-        (self.home / ".config/omarchy/workspace-backgrounds/per-workspace-wallpaper.sh").write_text(
-            "# an older watcher\n")
-        switches = self.home / ".config/caboodle/switches"
-        for manifest in switches.glob("*"):
-            manifest.unlink()
-        self.locked(True)
-        result = self.run_install()
-        self.assertTrue(list(switches.glob("*")), result.stdout + result.stderr)
-        self.assertIn("held back", result.stdout)
-
     def test_a_file_that_cannot_be_written_is_reported_not_skipped(self):
         engines = self.engines_out_of_date()
-        bin_dir = self.home / ".local/bin"
-        switches = self.home / ".config/caboodle/switches"
-        for manifest in switches.glob("*"):
-            manifest.unlink()
-        bin_dir.chmod(0o555)
+        watcher = self.home / ".config/omarchy/workspace-backgrounds/per-workspace-wallpaper.sh"
+        watcher.write_text("# an older watcher\n")
+        watcher.parent.chmod(0o555)
         try:
             result = self.run_install()
         finally:
-            bin_dir.chmod(0o755)
+            watcher.parent.chmod(0o755)
         self.assertEqual(result.returncode, 1, result.stdout)
         report = result.stderr.split("could not write these files", 1)
         self.assertEqual(len(report), 2, result.stderr)
-        self.assertIn(str(bin_dir / "reptile-feature"), report[1])
+        self.assertIn(str(watcher), report[1])
         self.assertNotIn(str(engines[0]), report[1])
         self.assertIn("installed the files it could write", result.stdout)
-        self.assertEqual(engines[3].read_text(), "# an older engine\n")
+        self.assertEqual(watcher.read_text(), "# an older watcher\n")
         self.assertEqual(engines[0].read_text(), (ROOT / "engine/ws-layout").read_text())
-        self.assertEqual(list(switches.glob("*")), [])
         self.assertFalse(self.called("systemd-run"))
 
     def test_a_write_that_fails_part_way_leaves_the_old_file_whole(self):
@@ -508,15 +475,15 @@ class Install(unittest.TestCase):
 
     def test_a_folder_where_a_file_belongs_is_reported(self):
         engines = self.engines_out_of_date()
-        engines[3].unlink()
-        engines[3].mkdir()
+        engines[2].unlink()
+        engines[2].mkdir()
         result = self.run_install()
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         report = result.stderr.split("could not write these files", 1)
         self.assertEqual(len(report), 2, result.stderr)
-        self.assertIn(str(engines[3]), report[1])
-        self.assertEqual(list(engines[3].iterdir()), [])
-        self.assertEqual([p.name for p in engines[3].parent.glob(".barbarian-install.*")], [])
+        self.assertIn(str(engines[2]), report[1])
+        self.assertEqual(list(engines[2].iterdir()), [])
+        self.assertEqual([p.name for p in engines[2].parent.glob(".barbarian-install.*")], [])
 
     def test_old_temp_files_are_cleared_and_folder_modes_kept(self):
         engines = self.engines_out_of_date()
@@ -641,27 +608,45 @@ class Install(unittest.TestCase):
         self.assertFalse(self.called("quickshell"))
         self.assertNotIn("restart", result.stdout)
 
-    def test_feature_switches_are_installed_without_changing_saved_choices(self):
+    def retired_switches(self):
+        switches = self.home / ".config/caboodle/switches"
+        switches.mkdir(parents=True, exist_ok=True)
+        owned = [switches / f"reptile-{name}.json" for name in ("columns", "quick-apps", "reseat-reopens")]
+        for manifest in owned:
+            manifest.write_text(json.dumps({"id": manifest.stem, "owner": "@barbarian"}, indent=2) + "\n")
+        adapter = self.home / ".local/bin/reptile-feature"
+        adapter.parent.mkdir(parents=True, exist_ok=True)
+        adapter.write_text("#!/bin/sh\n")
+        return switches, owned, adapter
+
+    def test_the_retired_caboodle_switches_are_removed_and_saved_choices_kept(self):
         saved = self.home / ".config/omarchy/workspace-layout/features.json"
         saved.parent.mkdir(parents=True)
         saved.write_text('{"quick_apps":false}\n')
+        switches, owned, adapter = self.retired_switches()
+        others = [switches / "reptile-elsewhere.json", switches / "other.json"]
+        for manifest in others:
+            manifest.write_text(json.dumps({"id": manifest.stem, "owner": "@someone-else"}, indent=2) + "\n")
         result = self.run_install()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(saved.read_text(), '{"quick_apps":false}\n')
-        manifests = list((self.home / ".config/caboodle/switches").glob("reptile-*.json"))
-        self.assertEqual(len(manifests), 11)
-        self.assertTrue(os.access(self.home / ".local/bin/reptile-feature", os.X_OK))
+        self.assertEqual([manifest for manifest in owned if manifest.exists()], [])
+        self.assertFalse(adapter.exists())
+        self.assertTrue(all(manifest.exists() for manifest in others))
         self.assertTrue((saved.parent / "reptile_features.py").exists())
 
-    def test_switch_install_failure_is_reported_after_restarting_the_shell(self):
-        conflict = self.home / ".config/caboodle/switches"
-        conflict.parent.mkdir(parents=True)
-        conflict.write_text("existing file")
-        result = self.run_install()
+    def test_a_switch_that_cannot_be_removed_is_reported_after_restarting_the_shell(self):
+        switches, owned, _ = self.retired_switches()
+        switches.chmod(0o555)
+        try:
+            result = self.run_install()
+        finally:
+            switches.chmod(0o755)
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("switches could not be installed", result.stderr)
+        self.assertIn("could not remove these retired Caboodle switches", result.stderr)
+        self.assertIn(str(owned[0]), result.stderr)
         self.assertTrue(self.called("omarchy-restart-shell"))
-        self.assertEqual(conflict.read_text(), "existing file")
+        self.assertTrue(owned[0].exists())
 
     def test_a_refused_restart_is_owed_rather_than_forgotten(self):
         self.stub("omarchy-restart-shell", "exit 1")     # what it does while the session is locked

@@ -332,26 +332,6 @@ hl = {
         app = {**self.app, "hide_on_close": False}
         self.assertEqual(self.run_close_lua([app], 'test-app-main', toggle='test'), ['special:quick-test', 'cursor'])
 
-    def test_old_global_manifest_is_retired_to_trash_but_other_owners_are_kept(self):
-        directory = self.directory / 'switches'
-        directory.mkdir()
-        retired = directory / 'reptile-hide-on-close.json'
-        original = json.dumps({'id': 'reptile-hide-on-close', 'owner': '@barbarian'})
-        retired.write_text(original)
-        with mock.patch.object(features.Path, 'home', return_value=self.directory):
-            features.install_manifests(directory)
-            features.install_manifests(directory)
-        self.assertFalse(retired.exists())
-        archived = list((self.directory / '.local/share/Trash/files').glob('barbarian-switch-*/reptile-hide-on-close.json'))
-        self.assertEqual(len(archived), 1)
-        self.assertEqual(archived[0].read_text(), original)
-        self.assertEqual(len(list(directory.glob('*.json'))), 11)
-        unowned = json.dumps({'id': 'reptile-hide-on-close', 'owner': '@someone-else'})
-        retired.write_text(unowned)
-        with self.assertRaises(features.SettingsError):
-            features.install_manifests(directory)
-        self.assertEqual(retired.read_text(), unowned)
-
     def test_reload_failure_is_not_reported_as_success(self):
         failed = subprocess.CompletedProcess([], 1, "", "offline")
         with mock.patch.object(quick.subprocess, "run", return_value=failed):
@@ -411,33 +391,18 @@ hl = {
         self.assertTrue(features.enabled("quick_apps"))
         self.assertEqual(self.bindings.read_text(), original)
 
-    def test_manifest_commands_use_the_same_status_and_choices(self):
-        features.install_manifests(self.directory / "switches")
-        manifests = list((self.directory / "switches").glob("*.json"))
-        self.assertEqual(len(manifests), len(features.FEATURES))
-        self.configure(columns=False, restore_layouts=False)
-        for path in manifests:
-            manifest = json.loads(path.read_text())
-            self.assertEqual(path.stem, manifest["id"])
-            self.assertEqual(manifest["group"], "Reptile")
-            self.assertEqual(manifest["status"][:2], ["reptile-feature", "status"])
-            key = manifest["status"][2]
-            state = features.status(key)
-            self.assertEqual(state["id"], manifest["id"])
-            self.assertEqual(state["on"], features.enabled(key))
-        self.assertIn("Paused", features.status("automatic_restore")["summary"])
-
     def test_two_processes_preserve_each_others_choices(self):
         isolated_home = self.directory / "home"
         isolated_home.mkdir()
         environment = dict(os.environ, HOME=str(isolated_home), PYTHONDONTWRITEBYTECODE="1")
-        processes = [subprocess.Popen([sys.executable, str(ENGINE / "reptile-feature"), "off", key],
+        keys = ("columns", "layout_messages")
+        processes = [subprocess.Popen([sys.executable, str(ENGINE / "ws-layout"), "features", key, "false"],
                                       stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=environment)
-                     for key in ("columns", "layout_messages")]
-        for process in processes:
+                     for key in keys]
+        for key, process in zip(keys, processes):
             out, error = process.communicate(timeout=5)
             self.assertEqual(process.returncode, 0, error)
-            self.assertFalse(json.loads(out)["on"])
+            self.assertFalse(json.loads(out)["values"][key])
         path = isolated_home / ".config/omarchy/workspace-layout/features.json"
         stored = json.loads(path.read_text())
         self.assertFalse(stored["columns"])
