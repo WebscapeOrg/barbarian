@@ -366,14 +366,16 @@ PLACEHOLDER_TITLE = re.compile(r"^Barbarian · missing (\S+) · ([0-9a-f]{6})(?:
 # desktop-file name — and the app then set its desktopFileName to omamail, so both classes
 # exist while machines hold either build. Confirm the live class and title against the window
 # at the cutover.
-STANDALONE_SUMMONS_CLASSES = {"magpie-calendar": "Magpie Calendar",
+STANDALONE_SUMMONS_CLASSES = {"clear-cut-calendar": "Clear Cut Calendar",
+                              "magpie-calendar": "Clear Cut Calendar",
                               "omamail-app": "✉️ Magpie Mail",
                               "omamail": "✉️ Magpie Mail"}
 SUMMONS = {
     "✉️ Magpie Mail": ("sh -c 'magpie-mail"
                        " || { [ \"$(omarchy-shell shell summon magpie-mail '\\''{}'\\'')\" = ok ]"
                        " || omarchy-shell shell summon magpie '\\''{}'\\''; }'"),
-    "Magpie Calendar": ("sh -c 'python3 \"${XDG_DATA_HOME:-$HOME/.local/share}/magpie-calendar/open-magpie-calendar.py\""
+    "Clear Cut Calendar": ("sh -c 'python3 \"${XDG_DATA_HOME:-$HOME/.local/share}/clear-cut-calendar/open-clear-cut-calendar.py\""
+                        " || python3 \"${XDG_DATA_HOME:-$HOME/.local/share}/magpie-calendar/open-magpie-calendar.py\""
                         " || { [ \"$(omarchy-shell shell summon magpie-calendar)\" = ok ]"
                         " || omarchy-shell shell summon skylark; }'"),
 }
@@ -381,7 +383,8 @@ SUMMONS = {
 # plain prefix is an alias of the plugin-era one: whichever way the app titles itself, the
 # recording still matches. Both the native title and the omamail-app class are confirmed
 # against the live window at the cutover.
-SUMMONS_ALIASES = {"Skylark": "Magpie Calendar", "🐦 Magpie": "✉️ Magpie Mail",
+SUMMONS_ALIASES = {"Skylark": "Clear Cut Calendar", "Magpie Calendar": "Clear Cut Calendar",
+                   "🐦 Magpie": "✉️ Magpie Mail",
                    "Magpie Mail": "✉️ Magpie Mail"}
 
 

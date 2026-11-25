@@ -66,7 +66,7 @@ class Summons(unittest.TestCase):
             with self.subTest(title=title):
                 win = {"class": "org.quickshell", "title": title}
                 command = engine.launcher_for_win(win, 4)
-                self.assertEqual(command, engine.SUMMONS["Magpie Calendar"])
+                self.assertEqual(command, engine.SUMMONS["Clear Cut Calendar"])
                 self.assertIn("magpie-calendar/open-magpie-calendar.py", command)
                 self.assertIn('[ "$(omarchy-shell shell summon magpie-calendar)" = ok ]', command)
                 self.assertIn("|| omarchy-shell shell summon skylark", command)
@@ -86,11 +86,21 @@ class Summons(unittest.TestCase):
     def test_the_standalone_calendar_window_is_summoned_like_the_plugin_was(self):
         """The calendar's window is a normal Qt window of class magpie-calendar since the move:
         both eras' classes carry the same SUMMONS command and the same identity."""
-        for klass in ("org.quickshell", "magpie-calendar"):
-            with self.subTest(klass=klass):
-                win = {"class": klass, "title": "Magpie Calendar — Week"}
-                self.assertEqual(engine.launcher_for_win(win, 4), engine.SUMMONS["Magpie Calendar"])
-                self.assertEqual(engine.app_identity(win), "Magpie Calendar")
+        for klass, title in (("org.quickshell", "Magpie Calendar — Week"),
+                             ("magpie-calendar", "Magpie Calendar — Week"),
+                             ("clear-cut-calendar", "Clear Cut Calendar — Week"),
+                             ("clear-cut-calendar", "Magpie Calendar — Week")):
+            with self.subTest(klass=klass, title=title):
+                win = {"class": klass, "title": title}
+                self.assertEqual(engine.launcher_for_win(win, 4), engine.SUMMONS["Clear Cut Calendar"])
+                self.assertEqual(engine.app_identity(win), "Clear Cut Calendar")
+
+    def test_clear_cut_calendar_opens_through_its_own_opener_before_the_old_one(self):
+        command = engine.SUMMONS["Clear Cut Calendar"]
+        new = command.index("clear-cut-calendar/open-clear-cut-calendar.py")
+        old = command.index("magpie-calendar/open-magpie-calendar.py")
+        self.assertLess(new, old)
+        self.assertLess(old, command.index("omarchy-shell shell summon magpie-calendar"))
 
     def test_the_standalone_class_alone_is_not_an_identity(self):
         """A window of the calendar's class with a stranger's title is not the calendar: no
@@ -344,7 +354,7 @@ class SkylarkRestoration(unittest.TestCase):
              mock.patch.object(engine, "card_down"), contextlib.redirect_stdout(io.StringIO()):
             self.assertEqual(engine.take_snapshot(4), 0)
         saved = write.call_args.args[0]["windows"][0]
-        self.assertEqual(saved["launch"], engine.SUMMONS["Magpie Calendar"])
+        self.assertEqual(saved["launch"], engine.SUMMONS["Clear Cut Calendar"])
         self.assertNotIn("cannot reopen", card.call_args.args[0])
 
     def test_an_old_null_launcher_recording_restores_without_resaving(self):
@@ -368,7 +378,7 @@ class SkylarkRestoration(unittest.TestCase):
                  mock.patch.object(engine, "ANNOUNCE", False), \
                  contextlib.redirect_stdout(io.StringIO()):
                 self.assertEqual(engine.restore(4), 0)
-            self.assertIn(engine.SUMMONS["Magpie Calendar"], launch.call_args.args[0])
+            self.assertIn(engine.SUMMONS["Clear Cut Calendar"], launch.call_args.args[0])
             self.assertEqual(path.read_bytes(), original)
 
     def test_a_recording_with_the_old_summon_reopens_through_the_new_one(self):
@@ -394,7 +404,7 @@ class SkylarkRestoration(unittest.TestCase):
                  contextlib.redirect_stdout(io.StringIO()):
                 self.assertEqual(engine.restore(4), 0)
         self.assertEqual([c.args[0] for c in launch.call_args_list],
-                         [f"setsid {engine.SUMMONS['Magpie Calendar']} >/dev/null 2>&1 &"])
+                         [f"setsid {engine.SUMMONS['Clear Cut Calendar']} >/dev/null 2>&1 &"])
 
     def test_a_recording_with_the_old_magpie_summon_reopens_through_the_new_one(self):
         """Dave's Messaging recording stores Magpie's launch as the old summon string; the live
@@ -435,7 +445,7 @@ class SkylarkRestoration(unittest.TestCase):
              mock.patch.object(engine.subprocess, "Popen"), \
              mock.patch.object(engine, "place_new", side_effect=place):
             self.assertEqual(engine.open_window("org.quickshell",
-                             engine.SUMMONS["Magpie Calendar"], 4), self.window)
+                             engine.SUMMONS["Clear Cut Calendar"], 4), self.window)
 
     def test_open_skylark_is_moved_from_another_desk_without_relaunching(self):
         for title in ("Skylark", "Magpie Calendar"):
@@ -455,7 +465,7 @@ class SkylarkRestoration(unittest.TestCase):
         live = {**self.window, "class": "magpie-calendar", "title": "Magpie Calendar"}
         record = {"workspace": 4, "name": "Messaging", "format": 2, "floating": [],
                   "windows": [{**self.window, "title": "Magpie Calendar",
-                               "launch": engine.SUMMONS["Magpie Calendar"],
+                               "launch": engine.SUMMONS["Clear Cut Calendar"],
                                "after": None, "side": None, "share": None}]}
         out = io.StringIO()
         with tempfile.TemporaryDirectory(prefix="barbarian-cal-era-") as temporary:
@@ -484,7 +494,7 @@ class SkylarkRestoration(unittest.TestCase):
                                [window] if window["workspace"]["id"] == ws else []), \
              mock.patch.object(engine, "dispatch", side_effect=dispatch), \
              mock.patch.object(engine.subprocess, "Popen") as launch:
-            result = engine.open_window("org.quickshell", engine.SUMMONS["Magpie Calendar"], 4)
+            result = engine.open_window("org.quickshell", engine.SUMMONS["Clear Cut Calendar"], 4)
         self.assertEqual(result["address"], "0xcal")
         self.assertEqual(window["workspace"]["id"], 4)
         launch.assert_not_called()
